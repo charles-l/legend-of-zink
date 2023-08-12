@@ -3,11 +3,19 @@ import pyray as rl
 import glm
 from util import *
 
-WIDTH = 800
-HEIGHT = 600
+WIDTH = 1600
+HEIGHT = 1200
 
 rl.init_window(WIDTH, HEIGHT, "game")
 rl.set_target_fps(60)
+
+zink_tex = rl.load_texture('zink.png')
+run_frames = {
+    (0, -1): list(range(0, 4)),
+    (1,  0): list(range(4, 8)),
+    (0,  1): list(range(8, 12)),
+    (-1, 0): list(range(12, 16)),
+    }
 
 bg_map = '''\
 ......x.....x........
@@ -28,6 +36,8 @@ xxxxxxx.....x........
 .....................'''.split('\n')
 
 player_pos = glm.vec2(3, 3)
+player_frame = 0
+
 enemy_pos = [glm.vec2(5, 6)]
 
 @dataclass
@@ -48,7 +58,7 @@ sword = Sword(glm.vec2(), glm.vec2())
 
 # set up camera
 camera = rl.Camera2D()
-camera.zoom = 3
+camera.zoom = 6
 camera.offset = WIDTH / 2, HEIGHT / 2
 while not rl.window_should_close():
     input_dir = glm.vec2()
@@ -70,7 +80,9 @@ while not rl.window_should_close():
         else:
             heading = glm.vec2(0, glm.sign(input_dir.y))
 
-    player_pos += 0.1 * normalize0(input_dir)
+        player_frame = run_frames[(int(heading.x), int(heading.y))][int((rl.get_time() % 0.4) / 0.1)]
+
+    player_pos += 0.07 * normalize0(input_dir)
 
     sword.pos += sword.vel
 
@@ -118,7 +130,8 @@ while not rl.window_should_close():
     color = rl.GREEN
     if last_damage.cooldown_active() and last_damage.cooldown_time % 0.2 < 0.1:
         color = rl.WHITE
-    rl.draw_rectangle(int(player_pos.x * TILE_SIZE), int(player_pos.y * TILE_SIZE), TILE_SIZE, TILE_SIZE, color)
+    #rl.draw_rectangle_lines(int(player_pos.x * TILE_SIZE), int(player_pos.y * TILE_SIZE), TILE_SIZE, TILE_SIZE, color)
+    rl.draw_texture_pro(zink_tex, rl.Rectangle(player_frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), tile_rect(player_pos), (0, 0), 0, rl.WHITE)
     rl.draw_line_v(tuple(player_pos * TILE_SIZE + TILE_SIZE / 2), tuple(player_pos * TILE_SIZE + heading * TILE_SIZE * 1.5 + TILE_SIZE / 2), rl.GREEN)
 
     if sword.is_active():
