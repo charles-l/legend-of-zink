@@ -24,7 +24,7 @@ class Spring:
 # size_spring = Spring(70, 4, 0)
 
 def tile_rect(point):
-    return rl.Rectangle(point.x * TILE_SIZE, point.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+    return rl.Rectangle(int(point.x * TILE_SIZE), int(point.y * TILE_SIZE), TILE_SIZE, TILE_SIZE)
 
 def normalize0(v):
     return glm.normalize(v) if v != glm.vec2() else glm.vec2()
