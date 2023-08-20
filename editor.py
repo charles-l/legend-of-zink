@@ -58,23 +58,47 @@ class Map:
             self.map = map
 
         def __setitem__(self, pos, value):
+            if self.tiles[pos[1]][pos[0]] == value:
+                return
             self.tiles[pos[1]][pos[0]] = value
             self.map.save()
 
         def __getitem__(self, pos):
             return self.tiles[pos[1]][pos[0]]
 
+        def __contains__(self, pos):
+            return (0 <= pos[0] < len(self.tiles[0]) and
+                    0 <= pos[1] < len(self.tiles))
+
+        def __getstate__(self):
+            state = self.__dict__.copy()
+            del state['map']
+            return state
+
+
     def __init__(self, nlayers=2):
+        self.enable_save = True
         p = pathlib.Path('map.pkl.xz')
         if p.exists():
             with lzma.open(p, 'rb') as f:
                 self.layers = pickle.load(f)
+                for l in self.layers:
+                    l.map = self
         else:
             self.layers = [Map.Layer(self) for _ in range(nlayers)]
 
+    @contextlib.contextmanager
+    def transaction(self):
+        self.enable_save = False
+        yield
+        self.enable_save = True
+        self.save()
+
     def save(self):
-        with lzma.open('map.pkl.xz', 'wb') as lzf:
-            pickle.dump(self.layers, lzf)
+        if self.enable_save:
+            print('saving')
+            with lzma.open('map.pkl.xz', 'wb') as lzf:
+                pickle.dump(self.layers, lzf)
 
 # track y offset to simplify creating rows in the GUI
 @dataclass
@@ -86,6 +110,15 @@ class YLayout:
     def row(self, height):
         yield self.yoff
         self.yoff += height + self.padding
+
+def flood_fill(tiles, pos, old_tile, new_tile):
+    if old_tile == new_tile:
+        return
+    x, y = pos
+    tiles[x, y] = new_tile
+    for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
+        if (x + dx, y + dy) in tiles and tiles[x + dx, y + dy] == old_tile:
+            flood_fill(tiles, (x+dx, y+dy), old_tile, new_tile)
 
 ###
 
@@ -135,7 +168,6 @@ while not rl.window_should_close():
     rl.begin_mode_2d(camera)
     rl.clear_background(rl.BLACK)
 
-
     rl.draw_rectangle_lines(0, 0, ZOOM_TILE_SIZE * width_ptr[0], ZOOM_TILE_SIZE * height_ptr[0],
                             rl.fade(rl.GRAY, 0.3))
 
@@ -157,8 +189,13 @@ while not rl.window_should_close():
     if rl.check_collision_point_rec(mouse_pos_world, world_rec):
         rl.draw_rectangle_lines(int(world_rec.x), int(world_rec.y), int(world_rec.width), int(world_rec.height),
                                 rl.WHITE)
-        if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
-            map.layers[selected_layer][x,y] = selected_tile
+        if rl.is_key_released(rl.KEY_F):
+            with map.transaction():
+                p = (x, y)
+                flood_fill(map.layers[selected_layer], p, map.layers[selected_layer][p], selected_tile)
+        else:
+            if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
+                map.layers[selected_layer][x,y] = selected_tile
 
     rl.end_mode_2d()
 
