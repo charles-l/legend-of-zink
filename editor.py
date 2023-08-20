@@ -2,18 +2,16 @@ from dataclasses import dataclass
 import pyray as rl
 import glm
 import random
+import lzma
 import json
+import pathlib
+import pickle
 import contextlib
 from util import *
 from typing import Literal
 
 WIDTH = 1600
 HEIGHT = 1200
-
-rl.set_config_flags(rl.FLAG_WINDOW_RESIZABLE)
-rl.init_window(WIDTH, HEIGHT, "Legend of Zink [EDITOR]")
-rl.init_audio_device()
-rl.set_target_fps(60)
 
 class Tileset:
     @staticmethod
@@ -53,7 +51,48 @@ class Tileset:
                             (0, 0),
                             0,
                             rl.WHITE)
+class Map:
+    class Layer:
+        def __init__(self, map):
+            self.tiles = [([0] * MAX_TILES) for _ in range(MAX_TILES)]
+            self.map = map
 
+        def __setitem__(self, pos, value):
+            self.tiles[pos[1]][pos[0]] = value
+            self.map.save()
+
+        def __getitem__(self, pos):
+            return self.tiles[pos[1]][pos[0]]
+
+    def __init__(self, nlayers=2):
+        p = pathlib.Path('map.pkl.xz')
+        if p.exists():
+            with lzma.open(p, 'rb') as f:
+                self.layers = pickle.load(f)
+        else:
+            self.layers = [Map.Layer(self) for _ in range(nlayers)]
+
+    def save(self):
+        with lzma.open('map.pkl.xz', 'wb') as lzf:
+            pickle.dump(self.layers, lzf)
+
+# track y offset to simplify creating rows in the GUI
+@dataclass
+class YLayout:
+    yoff: float = 5
+    padding: float = 5
+
+    @contextlib.contextmanager
+    def row(self, height):
+        yield self.yoff
+        self.yoff += height + self.padding
+
+###
+
+rl.set_config_flags(rl.FLAG_WINDOW_RESIZABLE)
+rl.init_window(WIDTH, HEIGHT, "Legend of Zink [EDITOR]")
+rl.init_audio_device()
+rl.set_target_fps(60)
 
 tileset = Tileset("tileset.def.json")
 
@@ -77,31 +116,7 @@ MAX_TILES = 100
 ZOOM_TILE_SIZE = TILE_SIZE * 4
 COLLISION_TYPES = "none trigger collide".split()
 
-class Layer:
-    def __init__(self):
-        self.tiles = [([0] * MAX_TILES) for _ in range(MAX_TILES)]
-
-    def __setitem__(self, pos, value):
-        self.tiles[pos[1]][pos[0]] = value
-
-    def __getitem__(self, pos):
-        return self.tiles[pos[1]][pos[0]]
-
-class Map:
-    def __init__(self, nlayers=2):
-        self.layers = [Layer() for _ in range(nlayers)]
-
 map = Map()
-
-@dataclass
-class YLayout:
-    yoff: float = 5
-    padding: float = 5
-
-    @contextlib.contextmanager
-    def row(self, height):
-        yield self.yoff
-        self.yoff += height + self.padding
 
 number_keys = 'ZERO ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE'.split()
 while not rl.window_should_close():
