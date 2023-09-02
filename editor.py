@@ -2,13 +2,13 @@ from dataclasses import dataclass
 import pyray as rl
 import glm
 import random
-import lzma
+import timeit
 import json
 import pathlib
 import pickle
 import contextlib
 from util import *
-from typing import Literal
+from typing import Literal, Union
 
 WIDTH = 1600
 HEIGHT = 1200
@@ -53,15 +53,15 @@ class Tileset:
                             rl.WHITE)
 
 def crop(tiles, width, height):
-    print('crop', width_ptr[0], height_ptr[0])
     return [row[:width] for row in tiles[:height]]
 
 class Map:
-    def __init__(self):
-        self.enable_save = True
-        p = pathlib.Path('map.json')
-        if p.exists():
-            self.layers = load_layers(p)
+    def __init__(self, path):
+        self.path = pathlib.Path(path)
+        if self.path.exists():
+            self.layers = load_layers(self.path)
+            with open(self.path, 'r') as f:
+                self.enemies = [Enemy(glm.ivec2(*p), []) for p in json.load(f)['enemy_pos']]
             width_ptr[0] = len(self.layers[0].tiles[0])
             height_ptr[0] = len(self.layers[0].tiles)
             # Resize each layer to be MAX_TILES by MAX_TILES so we can always
@@ -71,15 +71,15 @@ class Map:
                     row + [0] * (MAX_TILES - len(row)) for row in self.layers[i]
                     ] + [[0] * MAX_TILES for _ in range(MAX_TILES - len(self.layers[i]))]
         else:
+            self.enemies = []
             self.layers = [Grid([[0] * MAX_TILES for _ in range(MAX_TILES)]) for _ in range(2)]
 
-        # Hacky wrapper to call self.save() every time we update a value.
-        class SaveGrid(Grid):
-            def __setitem__(innerself, key, val):
-                if key in innerself and innerself[key] != val:
-                    super().__setitem__(key, val)
-                    self.save()
-        self.layers = [SaveGrid(l.tiles) for l in self.layers]
+    def serialize(self):
+        return {'layers': [crop(l.tiles, width_ptr[0], height_ptr[0]) for l in self.layers],
+                'enemy_pos': [e.pos.to_tuple() for e in self.enemies]}
+
+    def hash_mapdata(self):
+        return hash(pickle.dumps(self.serialize()))
 
     @property
     def bg(self):
@@ -89,18 +89,10 @@ class Map:
     def fg(self):
         return self.layers[1]
 
-    @contextlib.contextmanager
-    def transaction(self):
-        self.enable_save = False
-        yield
-        self.enable_save = True
-        self.save()
-
     def save(self):
-        if self.enable_save:
-            print('saving')
-            with open('map.json', 'w') as f:
-                json.dump([crop(l.tiles, width_ptr[0], height_ptr[0]) for l in self.layers], f)
+        print('saving')
+        with open(self.path, 'w') as f:
+            json.dump(self.serialize(), f)
 
 # track y offset to simplify creating rows in the GUI
 @dataclass
@@ -133,6 +125,7 @@ rl.init_audio_device()
 rl.set_target_fps(60)
 
 tileset = Tileset("tileset.def.json")
+enemy_tex = rl.load_texture('enemy.png')
 
 camera = rl.Camera2D()
 camera.zoom = 1
@@ -146,7 +139,15 @@ height_edit_mode = False
 height_ptr = rl.ffi.new("int *")
 height_ptr[0] = 40
 
-selected_tile = 1
+@dataclass
+class TileEditState:
+    selected_tile: int = 1
+
+@dataclass
+class EnemyEditState:
+    selected_enemy: int = 0
+
+editor_state: Union[TileEditState, EnemyEditState] = TileEditState()
 selected_layer = 0
 
 MAX_TILES = 40
@@ -154,13 +155,21 @@ MAX_TILES = 40
 ZOOM_TILE_SIZE = TILE_SIZE * 4
 COLLISION_TYPES = "none trigger collide".split()
 
-map = Map()
+@dataclass
+class Enemy:
+    pos: glm.ivec2
+    path: list[glm.ivec2]
+
+map = Map('map.json')
+last_map_hash = map.hash_mapdata()
 
 number_keys = 'ZERO ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE'.split()
 while not rl.window_should_close():
     for i, s in enumerate(number_keys):
         if rl.is_key_released(getattr(rl, f'KEY_{s}')) and 0 <= i < len(tileset.tiles):
-            selected_tile = i
+            editor_state = TileEditState(i)
+    if rl.is_key_released(rl.KEY_E):
+        editor_state = EnemyEditState()
 
     if rl.is_mouse_button_down(rl.MOUSE_BUTTON_RIGHT):
         camera.target.x -= rl.get_mouse_delta().x
@@ -184,6 +193,15 @@ while not rl.window_should_close():
                 if tile_idx != 0:
                     tileset.draw_tile(tile_idx, world_rec)
 
+    for e in map.enemies:
+        world_rec = rl.Rectangle(e.pos.x * ZOOM_TILE_SIZE, e.pos.y * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
+        rl.draw_texture_pro(enemy_tex,
+                            rl.Rectangle(0, 0, TILE_SIZE, TILE_SIZE),
+                            world_rec,
+                            (0, 0),
+                            0,
+                            rl.WHITE)
+
     mouse_pos_world = rl.get_screen_to_world_2d(rl.get_mouse_position(), camera)
     x = int(mouse_pos_world.x // ZOOM_TILE_SIZE)
     y = int(mouse_pos_world.y // ZOOM_TILE_SIZE)
@@ -191,29 +209,42 @@ while not rl.window_should_close():
                              y * ZOOM_TILE_SIZE,
                              ZOOM_TILE_SIZE,
                              ZOOM_TILE_SIZE)
-    if rl.check_collision_point_rec(mouse_pos_world, world_rec):
-        rl.draw_rectangle_lines(int(world_rec.x), int(world_rec.y), int(world_rec.width), int(world_rec.height),
-                                rl.WHITE)
-        if rl.is_key_released(rl.KEY_F):
-            with map.transaction():
+
+    rl.draw_rectangle_lines(int(world_rec.x), int(world_rec.y), int(world_rec.width), int(world_rec.height),
+                            rl.WHITE)
+
+    match editor_state:
+        case TileEditState(selected_tile=selected_tile):
+            if rl.is_key_released(rl.KEY_F):
                 flood_fill(map.bg, (x, y), selected_tile)
-        else:
-            if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
-                map.bg[x,y] = selected_tile
+            else:
+                if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
+                    map.bg[x,y] = selected_tile
+        case EnemyEditState():
+            rl.draw_texture_pro(enemy_tex,
+                                rl.Rectangle(0, 0, TILE_SIZE, TILE_SIZE),
+                                world_rec,
+                                (0, 0),
+                                0,
+                                rl.WHITE)
+            if rl.is_mouse_button_released(rl.MOUSE_BUTTON_LEFT):
+                map.enemies.append(Enemy(glm.ivec2(x, y), []))
 
     rl.end_mode_2d()
 
-    tile_type = COLLISION_TYPES.index(tileset.tiles[selected_tile]['collision'])
-    new_tile_type = rl.gui_toggle_group(rl.Rectangle(30, HEIGHT - ZOOM_TILE_SIZE - 35, 100, 30), ';'.join(COLLISION_TYPES), tile_type)
-    if tile_type != new_tile_type:
-        tileset.set(selected_tile, 'collision', COLLISION_TYPES[new_tile_type])
+    match editor_state:
+        case TileEditState(selected_tile=selected_tile):
+            tile_type = COLLISION_TYPES.index(tileset.tiles[selected_tile]['collision'])
+            new_tile_type = rl.gui_toggle_group(rl.Rectangle(30, HEIGHT - ZOOM_TILE_SIZE - 35, 100, 30), ';'.join(COLLISION_TYPES), tile_type)
+            if tile_type != new_tile_type:
+                tileset.set(selected_tile, 'collision', COLLISION_TYPES[new_tile_type])
 
-    for i in range(len(tileset.tiles)):
-        display_rect = (i * ZOOM_TILE_SIZE, HEIGHT - ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
-        tileset.draw_tile(i, rl.Rectangle(*display_rect))
+            for i in range(len(tileset.tiles)):
+                display_rect = (i * ZOOM_TILE_SIZE, HEIGHT - ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
+                tileset.draw_tile(i, rl.Rectangle(*display_rect))
 
-        if i == selected_tile:
-            rl.draw_rectangle_lines(*display_rect, rl.WHITE)
+                if i == selected_tile:
+                    rl.draw_rectangle_lines(*display_rect, rl.WHITE)
 
     left_col = YLayout()
     with left_col.row(30) as ypos:
@@ -230,5 +261,10 @@ while not rl.window_should_close():
         selected_layer = rl.gui_toggle_group(rl.Rectangle(60, ypos, 100, 30), ';'.join(str(x) for x in range(len(map.layers))), selected_layer)
 
     rl.draw_fps(WIDTH - 100, 10)
+
+    new_hash = map.hash_mapdata()
+    if last_map_hash != new_hash:
+        map.save()
+        last_map_hash = new_hash
 
     rl.end_drawing()

@@ -101,4 +101,4 @@ class Grid:
 
 def load_layers(path):
     with open(path, 'r') as f:
-        return [Grid(tiles) for tiles in json.load(f)]
+        return [Grid(tiles) for tiles in json.load(f)['layers']]
