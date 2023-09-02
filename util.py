@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import pyray as rl
 import glm
+import json
 
 TILE_SIZE = 16
 
@@ -29,7 +30,7 @@ def tile_rect(point):
 def normalize0(v):
     return glm.normalize(v) if v != glm.vec2() else glm.vec2()
 
-def fix_map_overlap(bg_map, actor_pos):
+def fix_map_overlap(collision_mask, actor_pos):
     '''Fix overlap with map tiles. Mutates `actor_pos`.'''
     collided = False
     for i in range(3):
@@ -38,7 +39,7 @@ def fix_map_overlap(bg_map, actor_pos):
         for dir in [(0, 0), (1, 0),
                     (0, 1), (1, 1)]:
             tile = glm.ivec2(actor_pos + dir)
-            if 0 <= tile.y < len(bg_map) and 0 <= tile.x < len(bg_map[0]) and bg_map[tile.y][tile.x] == 'x':
+            if 0 <= tile.y < len(collision_mask) and 0 <= tile.x < len(collision_mask[0]) and collision_mask[tile.y][tile.x]:
                 overlap_rec = rl.get_collision_rec(tile_rect(tile), tile_rect(actor_pos))
                 overlap_area = overlap_rec.width * overlap_rec.height
                 if overlap_area > most_area:
@@ -73,3 +74,24 @@ class CooldownTimer:
         else:
             return False
 
+class Grid:
+    def __init__(self, tiles):
+        self.tiles = tiles
+
+    def __getitem__(self, pos):
+        return self.tiles[pos[1]][pos[0]]
+
+    def __setitem__(self, pos, val):
+        self.tiles[pos[1]][pos[0]] = val
+
+    def __contains__(self, pos):
+        return (0 <= pos[0] < len(self.tiles[0]) and
+                0 <= pos[1] < len(self.tiles))
+
+    # iterate over rows
+    def __iter__(self):
+        yield from iter(self.tiles)
+
+def load_layers(path):
+    with open(path, 'r') as f:
+        return [Grid(tiles) for tiles in json.load(f)]

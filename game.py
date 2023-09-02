@@ -27,26 +27,14 @@ run_frames = {
     (-1, 0): list(range(12, 16)),
     }
 
-bg_map = '''\
-......x.....x........
-............x........
-......x.....x........
-......x.....x........
-xxxxxxx.....x........
-.....................
-................x....
-................x....
-..........x.x...x....
-..........x.x........
-..........x.x........
-..........x.x........
-..........x.x........
-.....................
-.....................
-.....................'''.split('\n')
-
 player_pos = glm.vec2(3, 3)
 player_frame = 0
+
+map_layers = load_layers('map.json')
+with open('tileset.def.json') as f:
+    tilesetdef = json.load(f)
+tileset_tex = rl.load_texture('tileset.png')
+collision_map = [[tilesetdef[t]['collision'] == 'collide' for t in row] for row in map_layers[0]]
 
 enemy_pos = [glm.vec2(5, 6)]
 
@@ -110,7 +98,7 @@ while not rl.window_should_close():
     # collisions
     if sword.is_active():
         collided = False
-        if fix_map_overlap(bg_map, sword.pos):
+        if fix_map_overlap(collision_map, sword.pos):
             collided = True
         to_kill = []
         for i, e in enumerate(enemy_pos):
@@ -123,9 +111,9 @@ while not rl.window_should_close():
         if collided:
             sword.deactivate()
 
-    fix_map_overlap(bg_map, player_pos)
+    fix_map_overlap(collision_map, player_pos)
     for e in enemy_pos:
-        fix_map_overlap(bg_map, e)
+        fix_map_overlap(collision_map, e)
         if rl.check_collision_recs(tile_rect(player_pos), tile_rect(e)) and last_damage.trigger():
             print('damage')
 
@@ -134,13 +122,15 @@ while not rl.window_should_close():
     rl.begin_mode_2d(camera)
     rl.clear_background(rl.LIGHTGRAY)
 
-    for y, row in enumerate(bg_map):
+    for y, row in enumerate(map_layers[0]):
         for x, c in enumerate(row):
-            if c == '.':
-                pass
-                #rl.draw_rectangle_lines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, rl.GREEN)
-            elif c == 'x':
-                rl.draw_rectangle(int(x * TILE_SIZE), int(y * TILE_SIZE), TILE_SIZE, TILE_SIZE, rl.GRAY)
+            #if c == '.':
+            #    pass
+            #    #rl.draw_rectangle_lines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, rl.GREEN)
+            #elif c == 'x':
+            if c != 0:
+                rl.draw_texture_pro(tileset_tex, rl.Rectangle(*tilesetdef[c]['rect']), tile_rect(glm.vec2(x, y)), (0, 0), 0, rl.WHITE)
+                #rl.draw_rectangle(int(x * TILE_SIZE), int(y * TILE_SIZE), TILE_SIZE, TILE_SIZE, rl.GRAY)
 
     for e in enemy_pos:
         frame = rl.get_time() % 0.2 // 0.1

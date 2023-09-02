@@ -52,40 +52,29 @@ class Tileset:
                             0,
                             rl.WHITE)
 class Map:
-    class Layer:
-        def __init__(self, map):
-            self.tiles = [([0] * MAX_TILES) for _ in range(MAX_TILES)]
-            self.map = map
-
-        def __setitem__(self, pos, value):
-            if self.tiles[pos[1]][pos[0]] == value:
-                return
-            self.tiles[pos[1]][pos[0]] = value
-            self.map.save()
-
-        def __getitem__(self, pos):
-            return self.tiles[pos[1]][pos[0]]
-
-        def __contains__(self, pos):
-            return (0 <= pos[0] < len(self.tiles[0]) and
-                    0 <= pos[1] < len(self.tiles))
-
-        def __getstate__(self):
-            state = self.__dict__.copy()
-            del state['map']
-            return state
-
-
-    def __init__(self, nlayers=2):
+    def __init__(self):
         self.enable_save = True
-        p = pathlib.Path('map.pkl.xz')
+        p = pathlib.Path('map.json')
         if p.exists():
-            with lzma.open(p, 'rb') as f:
-                self.layers = pickle.load(f)
-                for l in self.layers:
-                    l.map = self
+            self.layers = load_layers(p)
         else:
-            self.layers = [Map.Layer(self) for _ in range(nlayers)]
+            self.layers = [Grid([[0] * MAX_TILES for _ in range(MAX_TILES)]) for _ in range(2)]
+
+        # hacky wrapper to call self.save() every time we update a value.
+        class SaveGrid(Grid):
+            def __setitem__(innerself, key, val):
+                if innerself[key] != val:
+                    super().__setitem__(key, val)
+                    self.save()
+        self.layers = [SaveGrid(l.tiles) for l in self.layers]
+
+    @property
+    def bg(self):
+        return self.layers[0]
+
+    @property
+    def fg(self):
+        return self.layers[1]
 
     @contextlib.contextmanager
     def transaction(self):
@@ -97,8 +86,8 @@ class Map:
     def save(self):
         if self.enable_save:
             print('saving')
-            with lzma.open('map.pkl.xz', 'wb') as lzf:
-                pickle.dump(self.layers, lzf)
+            with open('map.json', 'w') as f:
+                json.dump([l.tiles for l in self.layers], f)
 
 # track y offset to simplify creating rows in the GUI
 @dataclass
