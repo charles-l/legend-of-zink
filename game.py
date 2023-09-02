@@ -27,10 +27,9 @@ run_frames = {
     (-1, 0): list(range(12, 16)),
     }
 
-player_pos = glm.vec2(3, 3)
 player_frame = 0
 
-map_layers, enemies = load_map('map.json')
+map_layers, enemies, player_pos = load_map('map.json')
 with open('tileset.def.json') as f:
     tilesetdef = json.load(f)
 tileset_tex = rl.load_texture('tileset.png')

@@ -109,4 +109,4 @@ def load_map(path):
         d = json.load(f)
         enemies = [Enemy(glm.vec2(*p), []) for p in d['enemy_pos']]
         layers = [Grid(tiles) for tiles in d['layers']]
-        return layers, enemies
+        return layers, enemies, glm.vec2(d['spawn'])

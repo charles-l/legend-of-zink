@@ -61,8 +61,9 @@ class Map:
         if mappath is None:
             self.enemies = []
             self.layers = [Grid([[0] * MAX_TILES for _ in range(MAX_TILES)]) for _ in range(2)]
+            self.spawn = (-1, -1)
         else:
-            self.layers, self.enemies = load_map(mappath)
+            self.layers, self.enemies, self.spawn = load_map(mappath)
             width_ptr[0] = len(self.layers[0].tiles[0])
             height_ptr[0] = len(self.layers[0].tiles)
             # Resize each layer to be MAX_TILES by MAX_TILES so we can always
@@ -74,7 +75,8 @@ class Map:
 
     def serialize(self):
         return {'layers': [crop(l.tiles, width_ptr[0], height_ptr[0]) for l in self.layers],
-                'enemy_pos': [e.pos.to_tuple() for e in self.enemies]}
+                'enemy_pos': [e.pos.to_tuple() for e in self.enemies],
+                'spawn': self.spawn}
 
     @property
     def bg(self):
@@ -116,6 +118,7 @@ rl.set_target_fps(60)
 
 tileset = Tileset("tileset.def.json")
 enemy_tex = rl.load_texture('enemy.png')
+zink_tex = rl.load_texture('zink.png')
 
 camera = rl.Camera2D()
 camera.zoom = 1
@@ -137,7 +140,11 @@ class TileEditState:
 class EnemyEditState:
     selected_enemy: int = 0
 
-editor_state: Union[TileEditState, EnemyEditState] = TileEditState()
+@dataclass
+class SpawnEditState:
+    pass
+
+editor_state: Union[TileEditState, EnemyEditState, SpawnEditState] = TileEditState()
 selected_layer = 0
 
 MAX_TILES = 40
@@ -160,6 +167,9 @@ while not rl.window_should_close():
             editor_state = TileEditState(i)
     if rl.is_key_released(rl.KEY_E):
         editor_state = EnemyEditState()
+    if rl.is_key_released(rl.KEY_S):
+        editor_state = SpawnEditState()
+
 
     if rl.is_mouse_button_down(rl.MOUSE_BUTTON_RIGHT):
         camera.target.x -= rl.get_mouse_delta().x
@@ -192,6 +202,13 @@ while not rl.window_should_close():
                             0,
                             rl.WHITE)
 
+    rl.draw_texture_pro(zink_tex,
+                        rl.Rectangle(0, 0, TILE_SIZE, TILE_SIZE),
+                        rl.Rectangle(map.spawn[0] * ZOOM_TILE_SIZE, map.spawn[1] * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE),
+                        (0, 0),
+                        0,
+                        rl.WHITE)
+
     mouse_pos_world = rl.get_screen_to_world_2d(rl.get_mouse_position(), camera)
     x = int(mouse_pos_world.x // ZOOM_TILE_SIZE)
     y = int(mouse_pos_world.y // ZOOM_TILE_SIZE)
@@ -216,9 +233,19 @@ while not rl.window_should_close():
                                 world_rec,
                                 (0, 0),
                                 0,
-                                rl.WHITE)
+                                rl.fade(rl.WHITE, 0.4))
             if rl.is_mouse_button_released(rl.MOUSE_BUTTON_LEFT):
                 map.enemies.append(Enemy(glm.ivec2(x, y), []))
+        case SpawnEditState():
+            rl.draw_texture_pro(zink_tex,
+                                rl.Rectangle(0, 0, TILE_SIZE, TILE_SIZE),
+                                world_rec,
+                                (0, 0),
+                                0,
+                                rl.fade(rl.WHITE, 0.4))
+            if rl.is_mouse_button_released(rl.MOUSE_BUTTON_LEFT):
+                map.spawn = x, y
+
 
     rl.end_mode_2d()
 
