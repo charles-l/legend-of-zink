@@ -30,13 +30,11 @@ run_frames = {
 player_pos = glm.vec2(3, 3)
 player_frame = 0
 
-map_layers = load_layers('map.json')
+map_layers, enemies = load_map('map.json')
 with open('tileset.def.json') as f:
     tilesetdef = json.load(f)
 tileset_tex = rl.load_texture('tileset.png')
 collision_map = [[tilesetdef[t]['collision'] == 'collide' for t in row] for row in map_layers[0]]
-
-enemy_pos = [glm.vec2(5, 6)]
 
 @dataclass
 class Sword:
@@ -92,8 +90,8 @@ while not rl.window_should_close():
     camera.target.x = int(errx + player_pos.x * TILE_SIZE)
     camera.target.y = int(erry + player_pos.y * TILE_SIZE)
 
-    for e in enemy_pos:
-        e.x += 0.04 if rl.get_time() % 4 < 2 else -0.04
+    for e in enemies:
+        e.pos.x += 0.04 if rl.get_time() % 4 < 2 else -0.04
 
     # collisions
     if sword.is_active():
@@ -101,20 +99,20 @@ while not rl.window_should_close():
         if fix_map_overlap(collision_map, sword.pos):
             collided = True
         to_kill = []
-        for i, e in enumerate(enemy_pos):
-            if rl.check_collision_recs(tile_rect(sword.pos), tile_rect(e)):
+        for i, e in enumerate(enemies):
+            if rl.check_collision_recs(tile_rect(sword.pos), tile_rect(e.pos)):
                 rl.play_sound(hit_sfx)
                 to_kill.append(i)
                 collided = True
         for i in reversed(to_kill):
-            del enemy_pos[i]
+            del enemies[i]
         if collided:
             sword.deactivate()
 
     fix_map_overlap(collision_map, player_pos)
-    for e in enemy_pos:
-        fix_map_overlap(collision_map, e)
-        if rl.check_collision_recs(tile_rect(player_pos), tile_rect(e)) and last_damage.trigger():
+    for e in enemies:
+        fix_map_overlap(collision_map, e.pos)
+        if rl.check_collision_recs(tile_rect(player_pos), tile_rect(e.pos)) and last_damage.trigger():
             print('damage')
 
     ### drawing
@@ -132,9 +130,9 @@ while not rl.window_should_close():
                 rl.draw_texture_pro(tileset_tex, rl.Rectangle(*tilesetdef[c]['rect']), tile_rect(glm.vec2(x, y)), (0, 0), 0, rl.WHITE)
                 #rl.draw_rectangle(int(x * TILE_SIZE), int(y * TILE_SIZE), TILE_SIZE, TILE_SIZE, rl.GRAY)
 
-    for e in enemy_pos:
+    for e in enemies:
         frame = rl.get_time() % 0.2 // 0.1
-        rl.draw_texture_pro(enemy_tex, rl.Rectangle(frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), tile_rect(e), (0, 0), 0, rl.WHITE)
+        rl.draw_texture_pro(enemy_tex, rl.Rectangle(frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), tile_rect(e.pos), (0, 0), 0, rl.WHITE)
 
     color = rl.WHITE
     if last_damage.cooldown_active() and last_damage.cooldown_time % 0.2 < 0.1:

@@ -99,6 +99,14 @@ class Grid:
         """Return the number of rows."""
         return len(self.tiles)
 
-def load_layers(path):
+@dataclass
+class Enemy:
+    pos: glm.vec2
+    path: list[glm.ivec2]
+
+def load_map(path):
     with open(path, 'r') as f:
-        return [Grid(tiles) for tiles in json.load(f)['layers']]
+        d = json.load(f)
+        enemies = [Enemy(glm.vec2(*p), []) for p in d['enemy_pos']]
+        layers = [Grid(tiles) for tiles in d['layers']]
+        return layers, enemies

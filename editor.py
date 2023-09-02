@@ -6,6 +6,7 @@ import timeit
 import json
 import pathlib
 import pickle
+import collections
 import contextlib
 from util import *
 from typing import Literal, Union
@@ -56,12 +57,12 @@ def crop(tiles, width, height):
     return [row[:width] for row in tiles[:height]]
 
 class Map:
-    def __init__(self, path):
-        self.path = pathlib.Path(path)
-        if self.path.exists():
-            self.layers = load_layers(self.path)
-            with open(self.path, 'r') as f:
-                self.enemies = [Enemy(glm.ivec2(*p), []) for p in json.load(f)['enemy_pos']]
+    def __init__(self, mappath):
+        if mappath is None:
+            self.enemies = []
+            self.layers = [Grid([[0] * MAX_TILES for _ in range(MAX_TILES)]) for _ in range(2)]
+        else:
+            self.layers, self.enemies = load_map(mappath)
             width_ptr[0] = len(self.layers[0].tiles[0])
             height_ptr[0] = len(self.layers[0].tiles)
             # Resize each layer to be MAX_TILES by MAX_TILES so we can always
@@ -70,16 +71,10 @@ class Map:
                 self.layers[i].tiles = [
                     row + [0] * (MAX_TILES - len(row)) for row in self.layers[i]
                     ] + [[0] * MAX_TILES for _ in range(MAX_TILES - len(self.layers[i]))]
-        else:
-            self.enemies = []
-            self.layers = [Grid([[0] * MAX_TILES for _ in range(MAX_TILES)]) for _ in range(2)]
 
     def serialize(self):
         return {'layers': [crop(l.tiles, width_ptr[0], height_ptr[0]) for l in self.layers],
                 'enemy_pos': [e.pos.to_tuple() for e in self.enemies]}
-
-    def hash_mapdata(self):
-        return hash(pickle.dumps(self.serialize()))
 
     @property
     def bg(self):
@@ -88,11 +83,6 @@ class Map:
     @property
     def fg(self):
         return self.layers[1]
-
-    def save(self):
-        print('saving')
-        with open(self.path, 'w') as f:
-            json.dump(self.serialize(), f)
 
 # track y offset to simplify creating rows in the GUI
 @dataclass
@@ -155,13 +145,13 @@ MAX_TILES = 40
 ZOOM_TILE_SIZE = TILE_SIZE * 4
 COLLISION_TYPES = "none trigger collide".split()
 
-@dataclass
-class Enemy:
-    pos: glm.ivec2
-    path: list[glm.ivec2]
-
-map = Map('map.json')
-last_map_hash = map.hash_mapdata()
+mapfile = pathlib.Path('map.json')
+if mapfile.exists():
+    map = Map(mapfile)
+else:
+    map = Map(None)
+last_map_hash = hash(pickle.dumps(map.serialize()))
+undo_stack = collections.deque(maxlen=10)
 
 number_keys = 'ZERO ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE'.split()
 while not rl.window_should_close():
@@ -262,9 +252,17 @@ while not rl.window_should_close():
 
     rl.draw_fps(WIDTH - 100, 10)
 
-    new_hash = map.hash_mapdata()
+    # save the map if it changed
+    serialized_map = map.serialize()
+    new_map_pickle = pickle.dumps(serialized_map)
+    new_hash = hash(new_map_pickle)
     if last_map_hash != new_hash:
-        map.save()
         last_map_hash = new_hash
+
+        undo_stack.append(new_map_pickle)
+
+        print('saving')
+        with open(mapfile, 'w') as f:
+            json.dump(serialized_map, f)
 
     rl.end_drawing()
