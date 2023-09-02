@@ -79,18 +79,25 @@ class Grid:
         self.tiles = tiles
 
     def __getitem__(self, pos):
-        return self.tiles[pos[1]][pos[0]]
+        if pos in self:
+            return self.tiles[pos[1]][pos[0]]
+        return None
 
     def __setitem__(self, pos, val):
-        self.tiles[pos[1]][pos[0]] = val
+        if pos in self:
+            self.tiles[pos[1]][pos[0]] = val
 
     def __contains__(self, pos):
         return (0 <= pos[0] < len(self.tiles[0]) and
                 0 <= pos[1] < len(self.tiles))
 
-    # iterate over rows
     def __iter__(self):
+        """Iterate over rows."""
         yield from iter(self.tiles)
+
+    def __len__(self):
+        """Return the number of rows."""
+        return len(self.tiles)
 
 def load_layers(path):
     with open(path, 'r') as f:

@@ -51,19 +51,32 @@ class Tileset:
                             (0, 0),
                             0,
                             rl.WHITE)
+
+def crop(tiles, width, height):
+    print('crop', width_ptr[0], height_ptr[0])
+    return [row[:width] for row in tiles[:height]]
+
 class Map:
     def __init__(self):
         self.enable_save = True
         p = pathlib.Path('map.json')
         if p.exists():
             self.layers = load_layers(p)
+            width_ptr[0] = len(self.layers[0].tiles[0])
+            height_ptr[0] = len(self.layers[0].tiles)
+            # Resize each layer to be MAX_TILES by MAX_TILES so we can always
+            # assume we have that many tiles available.
+            for i in range(len(self.layers)):
+                self.layers[i].tiles = [
+                    row + [0] * (MAX_TILES - len(row)) for row in self.layers[i]
+                    ] + [[0] * MAX_TILES for _ in range(MAX_TILES - len(self.layers[i]))]
         else:
             self.layers = [Grid([[0] * MAX_TILES for _ in range(MAX_TILES)]) for _ in range(2)]
 
-        # hacky wrapper to call self.save() every time we update a value.
+        # Hacky wrapper to call self.save() every time we update a value.
         class SaveGrid(Grid):
             def __setitem__(innerself, key, val):
-                if innerself[key] != val:
+                if key in innerself and innerself[key] != val:
                     super().__setitem__(key, val)
                     self.save()
         self.layers = [SaveGrid(l.tiles) for l in self.layers]
@@ -87,7 +100,7 @@ class Map:
         if self.enable_save:
             print('saving')
             with open('map.json', 'w') as f:
-                json.dump([l.tiles for l in self.layers], f)
+                json.dump([crop(l.tiles, width_ptr[0], height_ptr[0]) for l in self.layers], f)
 
 # track y offset to simplify creating rows in the GUI
 @dataclass
@@ -100,14 +113,17 @@ class YLayout:
         yield self.yoff
         self.yoff += height + self.padding
 
-def flood_fill(tiles, pos, old_tile, new_tile):
+def flood_fill(tiles, pos, new_tile):
+    old_tile = tiles[pos]
     if old_tile == new_tile:
         return
-    x, y = pos
-    tiles[x, y] = new_tile
-    for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
-        if (x + dx, y + dy) in tiles and tiles[x + dx, y + dy] == old_tile:
-            flood_fill(tiles, (x+dx, y+dy), old_tile, new_tile)
+    queue = [pos]
+    while queue:
+        x, y = queue.pop()
+        tiles[x, y] = new_tile
+        for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
+            if (x + dx, y + dy) in tiles and tiles[x + dx, y + dy] == old_tile:
+                queue.append((x+dx, y+dy))
 
 ###
 
@@ -133,7 +149,7 @@ height_ptr[0] = 40
 selected_tile = 1
 selected_layer = 0
 
-MAX_TILES = 100
+MAX_TILES = 40
 # larger tiles for display on hidpi machines
 ZOOM_TILE_SIZE = TILE_SIZE * 4
 COLLISION_TYPES = "none trigger collide".split()
@@ -180,11 +196,10 @@ while not rl.window_should_close():
                                 rl.WHITE)
         if rl.is_key_released(rl.KEY_F):
             with map.transaction():
-                p = (x, y)
-                flood_fill(map.layers[selected_layer], p, map.layers[selected_layer][p], selected_tile)
+                flood_fill(map.bg, (x, y), selected_tile)
         else:
             if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
-                map.layers[selected_layer][x,y] = selected_tile
+                map.bg[x,y] = selected_tile
 
     rl.end_mode_2d()
 
@@ -204,9 +219,11 @@ while not rl.window_should_close():
     with left_col.row(30) as ypos:
         if rl.gui_value_box(rl.Rectangle(60, ypos, 100, 30), "width", width_ptr, 1, MAX_TILES, width_edit_mode):
             width_edit_mode = not width_edit_mode
+        width_ptr[0] = min(width_ptr[0], MAX_TILES)
     with left_col.row(30) as ypos:
         if rl.gui_value_box(rl.Rectangle(60, ypos, 100, 30), "height", height_ptr, 1, MAX_TILES, height_edit_mode):
             height_edit_mode = not height_edit_mode
+        height_ptr[0] = min(height_ptr[0], MAX_TILES)
     with left_col.row(30) as ypos:
         rl.gui_set_style(rl.LABEL, rl.TEXT_ALIGNMENT, rl.TEXT_ALIGN_RIGHT)
         rl.gui_label(rl.Rectangle(5, ypos, 55, 30), "layer")
