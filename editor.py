@@ -57,34 +57,37 @@ class EditHistory:
     def __init__(self):
         self.undo_stack = collections.deque(maxlen=10)
         self.undo_pos = -1
-        self.last_hash = 0
+        self.level_hash = 0
+        self.last_save_hash = 0
         self.serialized_map = {}
 
-    def update_map(self, map):
-        serialized_map = map.serialize()
-        pickled_map = pickle.dumps(serialized_map)
-        new_hash = hash(pickled_map)
-        # save the map if it changed
-        if new_hash != self.last_hash:
+    def save_current(self):
+        if self.last_save_hash != self.level_hash:
             print('saving')
             with open(mapfile, 'w') as f:
-                json.dump(serialized_map, f)
-            self.last_hash = new_hash
+                json.dump(self.serialized_map, f)
+            self.last_save_hash = self.level_hash
 
+    def update(self, map):
+        self.serialized_map = map.serialize()
+        pickled_map = pickle.dumps(self.serialized_map)
+        new_hash = hash(pickled_map)
+        # add to undo history
+        if new_hash != self.level_hash:
             if self.undo_pos != -1:
-                print('squash history from ', self.undo_pos)
+                # squash undo traversal to history and apply change
                 # https://github.com/zaboople/klonk/blob/master/TheGURQ.md
                 self.undo_stack.extend(reversed(list(self.undo_stack)[self.undo_pos:-1]))
             self.undo_stack.append(pickled_map)
             self.undo_pos = -1
+            self.level_hash = new_hash
 
     def step_history(self, dir: Literal[1, -1], map):
         self.undo_pos += dir
         self.undo_pos = glm.clamp(self.undo_pos, -len(self.undo_stack), -1)
-        print(self.undo_pos, len(self.undo_stack))
         data = pickle.loads(self.undo_stack[self.undo_pos])
         map.layers, map.enemies, map.spawn = load_map_data(data)
-        self.last_hash = hash(self.undo_stack[self.undo_pos])
+        self.level_hash = hash(self.undo_stack[self.undo_pos])
         return data
 
 def crop(tiles, width, height):
@@ -193,7 +196,7 @@ else:
     map = Map(None)
 
 edit_history = EditHistory()
-edit_history.update_map(map)
+edit_history.update(map)
 
 number_keys = 'ZERO ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE'.split()
 while not rl.window_should_close():
@@ -318,6 +321,9 @@ while not rl.window_should_close():
 
     rl.draw_fps(WIDTH - 100, 10)
 
-    edit_history.update_map(map)
+    edit_history.update(map)
 
     rl.end_drawing()
+
+# save before close
+edit_history.save_current()
