@@ -61,10 +61,10 @@ class EditHistory:
         self.last_save_hash = 0
         self.serialized_map = {}
 
-    def save_current(self):
+    def save_current(self, output_file):
         if self.last_save_hash != self.level_hash:
             print('saving')
-            with open(mapfile, 'w') as f:
+            with open(output_file, 'w') as f:
                 json.dump(self.serialized_map, f)
             self.last_save_hash = self.level_hash
 
@@ -197,6 +197,7 @@ else:
 
 edit_history = EditHistory()
 edit_history.update(map)
+last_autosave = 0
 
 number_keys = 'ZERO ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE'.split()
 while not rl.window_should_close():
@@ -290,7 +291,6 @@ while not rl.window_should_close():
                 map.spawn = glm.vec2(x, y)
 
     rl.end_mode_2d()
-
     match editor_state:
         case TileEditState(selected_tile=selected_tile):
             tile_type = COLLISION_TYPES.index(tileset.tiles[selected_tile]['collision'])
@@ -325,5 +325,10 @@ while not rl.window_should_close():
 
     rl.end_drawing()
 
+    if rl.get_time() - last_autosave > 30:
+        last_autosave = rl.get_time()
+        print('autosave')
+        edit_history.save_current(mapfile.parent / (mapfile.name + '.autosave'))
+
 # save before close
-edit_history.save_current()
+edit_history.save_current(mapfile)
