@@ -112,4 +112,5 @@ def load_map(path):
 def load_map_data(data):
     enemies = [Enemy(glm.vec2(*p), []) for p in data['enemy_pos']]
     layers = [Grid(tiles) for tiles in data['layers']]
-    return layers, enemies, glm.vec2(data['spawn'])
+    trigger_tags = data['trigger_tags']
+    return layers, enemies, trigger_tags, glm.vec2(data['spawn'])

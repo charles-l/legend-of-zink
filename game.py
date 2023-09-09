@@ -27,14 +27,6 @@ run_frames = {
     (-1, 0): list(range(12, 16)),
     }
 
-player_frame = 0
-
-map_layers, enemies, player_pos = load_map('map.json')
-with open('tileset.def.json') as f:
-    tilesetdef = json.load(f)
-tileset_tex = rl.load_texture('tileset.png')
-collision_map = [[tilesetdef[t]['collision'] == 'collide' for t in row] for row in map_layers[0]]
-
 @dataclass
 class Sword:
     pos: glm.vec2
@@ -49,7 +41,25 @@ class Sword:
 last_damage = CooldownTimer(2)
 heading = glm.vec2(0, 1)
 
+@dataclass
+class Player:
+    pos: glm.vec2 = glm.vec2()
+    heading: glm.vec2 = glm.vec2(0, 1)
+    frame: int = 0
+
 sword = Sword(glm.vec2(), glm.vec2())
+player = Player()
+
+tileset_tex = rl.load_texture('tileset.png')
+with open('tileset.def.json') as f:
+    tilesetdef = json.load(f)
+
+class Scene:
+    def __init__(self, mapfile):
+        self.map_layers, self.enemies, self.trigger_tags, player.pos = load_map(mapfile)
+        self.collision_map = [[tilesetdef[t]['collision'] == 'collide' for t in row] for row in self.map_layers[0]]
+
+scene = Scene('map.json')
 
 # set up camera
 camera = rl.Camera2D()
@@ -57,6 +67,7 @@ camera.zoom = 6
 camera.offset = WIDTH / 2, HEIGHT / 2
 while not rl.window_should_close():
     rl.update_music_stream(music)
+
     input_dir = glm.vec2()
     if rl.is_key_down(rl.KEY_LEFT):
         input_dir.x -= 1
@@ -69,49 +80,50 @@ while not rl.window_should_close():
     if rl.is_key_released(rl.KEY_SPACE):
         rl.set_sound_pitch(throw_sfx, 1 + random.uniform(-0.1, 0.1))
         rl.play_sound(throw_sfx)
-        sword.pos = glm.vec2(player_pos)
-        sword.vel = glm.vec2(heading) * 0.3
+        sword.pos = glm.vec2(player.pos)
+        sword.vel = glm.vec2(player.heading) * 0.3
 
     if input_dir != glm.vec2():
         if abs(input_dir.x) > abs(input_dir.y):
-            heading = glm.vec2(glm.sign(input_dir.x), 0)
+            player.heading = glm.vec2(glm.sign(input_dir.x), 0)
         else:
-            heading = glm.vec2(0, glm.sign(input_dir.y))
+            player.heading = glm.vec2(0, glm.sign(input_dir.y))
 
-        player_frame = run_frames[(int(heading.x), int(heading.y))][int((rl.get_time() % 0.4) / 0.1)]
+        player.frame = run_frames[(int(player.heading.x), int(player.heading.y))][int((rl.get_time() % 0.4) / 0.1)]
 
-    player_pos += 0.07 * normalize0(input_dir)
+    player.pos += 0.07 * normalize0(input_dir)
+
 
     sword.pos += sword.vel
 
-    errx = glm.clamp(camera.target.x - player_pos.x * TILE_SIZE, -20, 20)
-    erry = glm.clamp(camera.target.y - player_pos.y * TILE_SIZE, -20, 20)
-    camera.target.x = int(errx + player_pos.x * TILE_SIZE)
-    camera.target.y = int(erry + player_pos.y * TILE_SIZE)
+    errx = glm.clamp(camera.target.x - player.pos.x * TILE_SIZE, -20, 20)
+    erry = glm.clamp(camera.target.y - player.pos.y * TILE_SIZE, -20, 20)
+    camera.target.x = int(errx + player.pos.x * TILE_SIZE)
+    camera.target.y = int(erry + player.pos.y * TILE_SIZE)
 
-    for e in enemies:
+    for e in scene.enemies:
         e.pos.x += 0.04 if rl.get_time() % 4 < 2 else -0.04
 
     # collisions
     if sword.is_active():
         collided = False
-        if fix_map_overlap(collision_map, sword.pos):
+        if fix_map_overlap(scene.collision_map, sword.pos):
             collided = True
         to_kill = []
-        for i, e in enumerate(enemies):
+        for i, e in enumerate(scene.enemies):
             if rl.check_collision_recs(tile_rect(sword.pos), tile_rect(e.pos)):
                 rl.play_sound(hit_sfx)
                 to_kill.append(i)
                 collided = True
         for i in reversed(to_kill):
-            del enemies[i]
+            del scene.enemies[i]
         if collided:
             sword.deactivate()
 
-    fix_map_overlap(collision_map, player_pos)
-    for e in enemies:
-        fix_map_overlap(collision_map, e.pos)
-        if rl.check_collision_recs(tile_rect(player_pos), tile_rect(e.pos)) and last_damage.trigger():
+    fix_map_overlap(scene.collision_map, player.pos)
+    for e in scene.enemies:
+        fix_map_overlap(scene.collision_map, e.pos)
+        if rl.check_collision_recs(tile_rect(player.pos), tile_rect(e.pos)) and last_damage.trigger():
             print('damage')
 
     ### drawing
@@ -119,26 +131,22 @@ while not rl.window_should_close():
     rl.begin_mode_2d(camera)
     rl.clear_background(rl.LIGHTGRAY)
 
-    for y, row in enumerate(map_layers[0]):
+    for y, row in enumerate(scene.map_layers[0]):
         for x, c in enumerate(row):
-            #if c == '.':
-            #    pass
-            #    #rl.draw_rectangle_lines(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE, rl.GREEN)
-            #elif c == 'x':
             if c != 0:
                 rl.draw_texture_pro(tileset_tex, rl.Rectangle(*tilesetdef[c]['rect']), tile_rect(glm.vec2(x, y)), (0, 0), 0, rl.WHITE)
                 #rl.draw_rectangle(int(x * TILE_SIZE), int(y * TILE_SIZE), TILE_SIZE, TILE_SIZE, rl.GRAY)
 
-    for e in enemies:
+    for e in scene.enemies:
         frame = rl.get_time() % 0.2 // 0.1
         rl.draw_texture_pro(enemy_tex, rl.Rectangle(frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), tile_rect(e.pos), (0, 0), 0, rl.WHITE)
 
     color = rl.WHITE
     if last_damage.cooldown_active() and last_damage.cooldown_time % 0.2 < 0.1:
         color = rl.RED
-    #rl.draw_rectangle_lines(int(player_pos.x * TILE_SIZE), int(player_pos.y * TILE_SIZE), TILE_SIZE, TILE_SIZE, color)
-    rl.draw_texture_pro(zink_tex, rl.Rectangle(player_frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), tile_rect(player_pos), (0, 0), 0, color)
-    rl.draw_line_v(tuple(player_pos * TILE_SIZE + TILE_SIZE / 2), tuple(player_pos * TILE_SIZE + heading * TILE_SIZE * 1.5 + TILE_SIZE / 2), rl.GREEN)
+    #rl.draw_rectangle_lines(int(player.pos.x * TILE_SIZE), int(player.pos.y * TILE_SIZE), TILE_SIZE, TILE_SIZE, color)
+    rl.draw_texture_pro(zink_tex, rl.Rectangle(player.frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), tile_rect(player.pos), (0, 0), 0, color)
+    rl.draw_line_v(tuple(player.pos * TILE_SIZE + TILE_SIZE / 2), tuple(player.pos * TILE_SIZE + player.heading * TILE_SIZE * 1.5 + TILE_SIZE / 2), rl.GREEN)
 
     if sword.is_active():
         sword_heading = glm.ivec2(glm.normalize(sword.vel)).to_tuple()

@@ -11,8 +11,27 @@ import contextlib
 from util import *
 from typing import Literal, Union
 
+from tkinter import Tk
+from tkinter.filedialog import askopenfilename
+
+Tk().withdraw() # keep the root Tk window from appearing
+
 WIDTH = 1600
 HEIGHT = 1200
+
+MAX_TILES = 40
+# larger tiles for display on hidpi machines
+ZOOM_TILE_SIZE = TILE_SIZE * 4
+COLLISION_TYPES = "none trigger collide".split()
+
+def prompt_for_map():
+    filename = pathlib.Path(askopenfilename())
+    try:
+        return Map(filename), filename
+    except Exception as e:
+        print(e)
+        print('failed to load map')
+        return Map(None), pathlib.Path('tmp.json')
 
 class Tileset:
     @staticmethod
@@ -86,7 +105,7 @@ class EditHistory:
         self.undo_pos += dir
         self.undo_pos = glm.clamp(self.undo_pos, -len(self.undo_stack), -1)
         data = pickle.loads(self.undo_stack[self.undo_pos])
-        map.layers, map.enemies, map.spawn = load_map_data(data)
+        map.layers, map.enemies, map.trigger_tags, map.spawn = load_map_data(data)
         self.level_hash = hash(self.undo_stack[self.undo_pos])
         return data
 
@@ -99,8 +118,9 @@ class Map:
             self.enemies = []
             self.layers = [Grid([[0] * MAX_TILES for _ in range(MAX_TILES)]) for _ in range(2)]
             self.spawn = glm.vec2(-1, -1)
+            self.trigger_tags = {}
         else:
-            self.layers, self.enemies, self.spawn = load_map(mappath)
+            self.layers, self.enemies, self.trigger_tags, self.spawn = load_map(mappath)
             width_ptr[0] = len(self.layers[0].tiles[0])
             height_ptr[0] = len(self.layers[0].tiles)
             # Resize each layer to be MAX_TILES by MAX_TILES so we can always
@@ -113,7 +133,9 @@ class Map:
     def serialize(self):
         return {'layers': [crop(l.tiles, width_ptr[0], height_ptr[0]) for l in self.layers],
                 'enemy_pos': [e.pos.to_tuple() for e in self.enemies],
-                'spawn': self.spawn.to_tuple()}
+                'spawn': self.spawn.to_tuple(),
+                'trigger_tags': self.trigger_tags,
+                }
 
     @property
     def bg(self):
@@ -161,13 +183,21 @@ camera = rl.Camera2D()
 camera.zoom = 1
 camera.offset = WIDTH / 2, HEIGHT / 2
 
-width_edit_mode = False
+edit_mode = {
+    'width': False,
+    'height': False,
+    'trigger_tag': False,
+    }
+
 width_ptr = rl.ffi.new("int *")
 width_ptr[0] = 40
 
-height_edit_mode = False
 height_ptr = rl.ffi.new("int *")
 height_ptr[0] = 40
+
+trigger_tag_text = rl.ffi.new("char[20]")
+
+last_tile = glm.ivec2(0, 0)
 
 @dataclass
 class TileEditState:
@@ -184,36 +214,46 @@ class SpawnEditState:
 editor_state: Union[TileEditState, EnemyEditState, SpawnEditState] = TileEditState()
 selected_layer = 0
 
-MAX_TILES = 40
-# larger tiles for display on hidpi machines
-ZOOM_TILE_SIZE = TILE_SIZE * 4
-COLLISION_TYPES = "none trigger collide".split()
-
+# default to map.json
 mapfile = pathlib.Path('map.json')
 if mapfile.exists():
     map = Map(mapfile)
 else:
-    map = Map(None)
+    map, mapfile = prompt_for_map()
 
 edit_history = EditHistory()
 edit_history.update(map)
 last_autosave = 0
 
+def hot_key_released(key):
+    # don't respond to hotkeys when editing text boxes
+    if any(edit_mode.values()):
+        return False
+
+    mod = None
+    if key.startswith('ctrl-'):
+        mod = 'ctrl'
+        key = key.removeprefix('ctrl-')
+    is_released = rl.is_key_released(getattr(rl, f'KEY_{key.upper()}'))
+    if mod == 'ctrl':
+        return rl.is_key_down(rl.KEY_LEFT_CONTROL) and is_released
+    else:
+        return is_released
+
 number_keys = 'ZERO ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE'.split()
 while not rl.window_should_close():
-    if rl.is_key_pressed(rl.KEY_Z) and rl.is_key_down(rl.KEY_LEFT_CONTROL):
+    if hot_key_released('ctrl-z'):
         edit_history.step_history(-1, map)
-    if rl.is_key_pressed(rl.KEY_Y) and rl.is_key_down(rl.KEY_LEFT_CONTROL):
+    if hot_key_released('ctrl-y'):
         edit_history.step_history(1, map)
 
     for i, s in enumerate(number_keys):
-        if rl.is_key_released(getattr(rl, f'KEY_{s}')) and 0 <= i < len(tileset.tiles):
+        if hot_key_released(s) and 0 <= i < len(tileset.tiles):
             editor_state = TileEditState(i)
-    if rl.is_key_released(rl.KEY_E):
+    if hot_key_released('e'):
         editor_state = EnemyEditState()
-    if rl.is_key_released(rl.KEY_S):
+    if hot_key_released('s'):
         editor_state = SpawnEditState()
-
 
     if rl.is_mouse_button_down(rl.MOUSE_BUTTON_RIGHT):
         camera.target.x -= rl.get_mouse_delta().x
@@ -266,11 +306,15 @@ while not rl.window_should_close():
 
     match editor_state:
         case TileEditState(selected_tile=selected_tile):
-            if rl.is_key_released(rl.KEY_F):
+            if hot_key_released('f'):
                 flood_fill(map.bg, (x, y), selected_tile)
             else:
                 if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
                     map.bg[x,y] = selected_tile
+                    if (x, y) in map.bg:
+                        last_tile = glm.ivec2(x, y)
+
+            rl.draw_rectangle_lines(last_tile.x * ZOOM_TILE_SIZE, last_tile.y * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, rl.GREEN)
         case EnemyEditState():
             rl.draw_texture_pro(enemy_tex,
                                 rl.Rectangle(0, 0, TILE_SIZE, TILE_SIZE),
@@ -280,6 +324,7 @@ while not rl.window_should_close():
                                 rl.fade(rl.WHITE, 0.4))
             if rl.is_mouse_button_released(rl.MOUSE_BUTTON_LEFT):
                 map.enemies.append(Enemy(glm.ivec2(x, y), []))
+
         case SpawnEditState():
             rl.draw_texture_pro(zink_tex,
                                 rl.Rectangle(0, 0, TILE_SIZE, TILE_SIZE),
@@ -291,15 +336,24 @@ while not rl.window_should_close():
                 map.spawn = glm.vec2(x, y)
 
     rl.end_mode_2d()
+
     match editor_state:
         case TileEditState(selected_tile=selected_tile):
             tile_type = COLLISION_TYPES.index(tileset.tiles[selected_tile]['collision'])
-            new_tile_type = rl.gui_toggle_group(rl.Rectangle(30, HEIGHT - ZOOM_TILE_SIZE - 35, 100, 30), ';'.join(COLLISION_TYPES), tile_type)
+            new_tile_type = rl.gui_toggle_group(rl.Rectangle(30, rl.get_render_height() - ZOOM_TILE_SIZE - 35, 100, 30), ';'.join(COLLISION_TYPES), tile_type)
             if tile_type != new_tile_type:
                 tileset.set(selected_tile, 'collision', COLLISION_TYPES[new_tile_type])
 
+            if COLLISION_TYPES[tile_type] == 'trigger':
+                if rl.gui_text_box(rl.Rectangle(340, rl.get_render_height() - ZOOM_TILE_SIZE - 35, 100, 30), rl.ffi.cast("char*", trigger_tag_text), len(trigger_tag_text), edit_mode['trigger_tag']):
+                    edit_mode['trigger_tag'] = not edit_mode['trigger_tag']
+                    if not edit_mode['trigger_tag']:
+                        trigger_tag = rl.ffi.string(trigger_tag_text).decode('ascii')
+                        print('set', last_tile, 'to', trigger_tag)
+                        map.trigger_tags[f'{last_tile.x} {last_tile.y}'] = trigger_tag
+
             for i in range(len(tileset.tiles)):
-                display_rect = (i * ZOOM_TILE_SIZE, HEIGHT - ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
+                display_rect = (i * ZOOM_TILE_SIZE, rl.get_render_height() - ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
                 tileset.draw_tile(i, rl.Rectangle(*display_rect))
 
                 if i == selected_tile:
@@ -307,19 +361,22 @@ while not rl.window_should_close():
 
     left_col = YLayout()
     with left_col.row(30) as ypos:
-        if rl.gui_value_box(rl.Rectangle(60, ypos, 100, 30), "width", width_ptr, 1, MAX_TILES, width_edit_mode):
-            width_edit_mode = not width_edit_mode
+        if rl.gui_value_box(rl.Rectangle(60, ypos, 100, 30), "width", width_ptr, 1, MAX_TILES, edit_mode['width']):
+            edit_mode['width'] = not edit_mode['width']
         width_ptr[0] = min(width_ptr[0], MAX_TILES)
     with left_col.row(30) as ypos:
-        if rl.gui_value_box(rl.Rectangle(60, ypos, 100, 30), "height", height_ptr, 1, MAX_TILES, height_edit_mode):
-            height_edit_mode = not height_edit_mode
+        if rl.gui_value_box(rl.Rectangle(60, ypos, 100, 30), "height", height_ptr, 1, MAX_TILES, edit_mode['height']):
+            edit_mode['height'] = not edit_mode['height']
         height_ptr[0] = min(height_ptr[0], MAX_TILES)
     with left_col.row(30) as ypos:
         rl.gui_set_style(rl.LABEL, rl.TEXT_ALIGNMENT, rl.TEXT_ALIGN_RIGHT)
         rl.gui_label(rl.Rectangle(5, ypos, 55, 30), "layer")
         selected_layer = rl.gui_toggle_group(rl.Rectangle(60, ypos, 100, 30), ';'.join(str(x) for x in range(len(map.layers))), selected_layer)
+    with left_col.row(30) as ypos:
+        if rl.gui_button(rl.Rectangle(60, ypos, 100, 30), "map file"):
+            map, mapfile = prompt_for_map()
 
-    rl.draw_fps(WIDTH - 100, 10)
+    rl.draw_fps(rl.get_render_width() - 100, 10)
 
     edit_history.update(map)
 
