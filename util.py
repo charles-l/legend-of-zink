@@ -107,6 +107,9 @@ class Enemy:
 def load_map(path):
     with open(path, 'r') as f:
         d = json.load(f)
-        enemies = [Enemy(glm.vec2(*p), []) for p in d['enemy_pos']]
-        layers = [Grid(tiles) for tiles in d['layers']]
-        return layers, enemies, glm.vec2(d['spawn'])
+        return load_map_data(d)
+
+def load_map_data(data):
+    enemies = [Enemy(glm.vec2(*p), []) for p in data['enemy_pos']]
+    layers = [Grid(tiles) for tiles in data['layers']]
+    return layers, enemies, glm.vec2(data['spawn'])

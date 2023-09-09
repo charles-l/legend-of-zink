@@ -53,6 +53,40 @@ class Tileset:
                             0,
                             rl.WHITE)
 
+class EditHistory:
+    def __init__(self):
+        self.undo_stack = collections.deque(maxlen=10)
+        self.undo_pos = -1
+        self.last_hash = 0
+        self.serialized_map = {}
+
+    def update_map(self, map):
+        serialized_map = map.serialize()
+        pickled_map = pickle.dumps(serialized_map)
+        new_hash = hash(pickled_map)
+        # save the map if it changed
+        if new_hash != self.last_hash:
+            print('saving')
+            with open(mapfile, 'w') as f:
+                json.dump(serialized_map, f)
+            self.last_hash = new_hash
+
+            if self.undo_pos != -1:
+                print('squash history from ', self.undo_pos)
+                # https://github.com/zaboople/klonk/blob/master/TheGURQ.md
+                self.undo_stack.extend(reversed(list(self.undo_stack)[self.undo_pos:-1]))
+            self.undo_stack.append(pickled_map)
+            self.undo_pos = -1
+
+    def step_history(self, dir: Literal[1, -1], map):
+        self.undo_pos += dir
+        self.undo_pos = glm.clamp(self.undo_pos, -len(self.undo_stack), -1)
+        print(self.undo_pos, len(self.undo_stack))
+        data = pickle.loads(self.undo_stack[self.undo_pos])
+        map.layers, map.enemies, map.spawn = load_map_data(data)
+        self.last_hash = hash(self.undo_stack[self.undo_pos])
+        return data
+
 def crop(tiles, width, height):
     return [row[:width] for row in tiles[:height]]
 
@@ -61,7 +95,7 @@ class Map:
         if mappath is None:
             self.enemies = []
             self.layers = [Grid([[0] * MAX_TILES for _ in range(MAX_TILES)]) for _ in range(2)]
-            self.spawn = (-1, -1)
+            self.spawn = glm.vec2(-1, -1)
         else:
             self.layers, self.enemies, self.spawn = load_map(mappath)
             width_ptr[0] = len(self.layers[0].tiles[0])
@@ -76,7 +110,7 @@ class Map:
     def serialize(self):
         return {'layers': [crop(l.tiles, width_ptr[0], height_ptr[0]) for l in self.layers],
                 'enemy_pos': [e.pos.to_tuple() for e in self.enemies],
-                'spawn': self.spawn}
+                'spawn': self.spawn.to_tuple()}
 
     @property
     def bg(self):
@@ -157,11 +191,17 @@ if mapfile.exists():
     map = Map(mapfile)
 else:
     map = Map(None)
-last_map_hash = hash(pickle.dumps(map.serialize()))
-undo_stack = collections.deque(maxlen=10)
+
+edit_history = EditHistory()
+edit_history.update_map(map)
 
 number_keys = 'ZERO ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE'.split()
 while not rl.window_should_close():
+    if rl.is_key_pressed(rl.KEY_Z) and rl.is_key_down(rl.KEY_LEFT_CONTROL):
+        edit_history.step_history(-1, map)
+    if rl.is_key_pressed(rl.KEY_Y) and rl.is_key_down(rl.KEY_LEFT_CONTROL):
+        edit_history.step_history(1, map)
+
     for i, s in enumerate(number_keys):
         if rl.is_key_released(getattr(rl, f'KEY_{s}')) and 0 <= i < len(tileset.tiles):
             editor_state = TileEditState(i)
@@ -244,8 +284,7 @@ while not rl.window_should_close():
                                 0,
                                 rl.fade(rl.WHITE, 0.4))
             if rl.is_mouse_button_released(rl.MOUSE_BUTTON_LEFT):
-                map.spawn = x, y
-
+                map.spawn = glm.vec2(x, y)
 
     rl.end_mode_2d()
 
@@ -279,17 +318,6 @@ while not rl.window_should_close():
 
     rl.draw_fps(WIDTH - 100, 10)
 
-    # save the map if it changed
-    serialized_map = map.serialize()
-    new_map_pickle = pickle.dumps(serialized_map)
-    new_hash = hash(new_map_pickle)
-    if last_map_hash != new_hash:
-        last_map_hash = new_hash
-
-        undo_stack.append(new_map_pickle)
-
-        print('saving')
-        with open(mapfile, 'w') as f:
-            json.dump(serialized_map, f)
+    edit_history.update_map(map)
 
     rl.end_drawing()
