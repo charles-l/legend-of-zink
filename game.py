@@ -61,12 +61,44 @@ class Scene:
 
 scene = Scene('map.json')
 
+fade_out_rect = 0
+event_queue = []
+
+def fade_to(inner_co):
+    global fade_out_rect
+    start = rl.get_time()
+    while rl.get_time() - start < 0.1:
+        fade_out_rect = ((rl.get_time() - start) / 0.1)
+        yield
+
+    fade_out_rect = 1
+
+    yield from inner_co
+
+    start = rl.get_time()
+    while rl.get_time() - start < 0.1:
+        fade_out_rect = 1 - ((rl.get_time() - start) / 0.1)
+        yield
+
+    fade_out_rect = 0
+
+def load_scene(mapfile):
+    global scene
+    scene = Scene(mapfile)
+    print('load scene', mapfile)
+    yield
+
 # set up camera
 camera = rl.Camera2D()
 camera.zoom = 6
 camera.offset = WIDTH / 2, HEIGHT / 2
 while not rl.window_should_close():
     rl.update_music_stream(music)
+    if event_queue:
+        try:
+            next(event_queue[0])
+        except StopIteration:
+            event_queue.pop(0)
 
     input_dir = glm.vec2()
     if rl.is_key_down(rl.KEY_LEFT):
@@ -105,6 +137,12 @@ while not rl.window_should_close():
         e.pos.x += 0.04 if rl.get_time() % 4 < 2 else -0.04
 
     # collisions
+    for t, v in scene.trigger_tags.items():
+        if rl.check_collision_recs(tile_rect(t), tile_rect(player.pos)) and not event_queue:
+            print('trigger', v)
+            event_queue.append(fade_to(load_scene('cave.json')))
+            #scene = Scene('cave.json')
+
     if sword.is_active():
         collided = False
         if fix_map_overlap(scene.collision_map, sword.pos):
@@ -155,4 +193,8 @@ while not rl.window_should_close():
         #rl.draw_rectangle(int(sword.pos.x * TILE_SIZE), int(sword.pos.y * TILE_SIZE), TILE_SIZE, TILE_SIZE, rl.PURPLE)
 
     rl.end_mode_2d()
+
+    if fade_out_rect:
+        rl.draw_rectangle(0, 0, WIDTH, HEIGHT, rl.fade(rl.BLACK, fade_out_rect))
+
     rl.end_drawing()

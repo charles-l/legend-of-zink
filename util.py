@@ -25,7 +25,7 @@ class Spring:
 # size_spring = Spring(70, 4, 0)
 
 def tile_rect(point):
-    return rl.Rectangle(int(point.x * TILE_SIZE), int(point.y * TILE_SIZE), TILE_SIZE, TILE_SIZE)
+    return rl.Rectangle(int(point[0] * TILE_SIZE), int(point[1] * TILE_SIZE), TILE_SIZE, TILE_SIZE)
 
 def normalize0(v):
     return glm.normalize(v) if v != glm.vec2() else glm.vec2()
@@ -112,5 +112,8 @@ def load_map(path):
 def load_map_data(data):
     enemies = [Enemy(glm.vec2(*p), []) for p in data['enemy_pos']]
     layers = [Grid(tiles) for tiles in data['layers']]
-    trigger_tags = data['trigger_tags']
+    trigger_tags = {}
+    for k, v in data['trigger_tags'].items():
+        x, y = k.split()
+        trigger_tags[(int(x), int(y))] = v
     return layers, enemies, trigger_tags, glm.vec2(data['spawn'])

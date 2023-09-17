@@ -9,10 +9,10 @@ import pickle
 import collections
 import contextlib
 from util import *
-from typing import Literal, Union
+from typing import Literal, Union, Tuple
 
 from tkinter import Tk
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename, asksaveasfilename
 
 Tk().withdraw() # keep the root Tk window from appearing
 
@@ -22,7 +22,11 @@ HEIGHT = 1200
 MAX_TILES = 40
 # larger tiles for display on hidpi machines
 ZOOM_TILE_SIZE = TILE_SIZE * 4
-COLLISION_TYPES = "none trigger collide".split()
+COLLISION_TYPES = "none collide".split()
+
+def prompt_for_new_map():
+    filename = pathlib.Path(asksaveasfilename())
+    return Map(None), pathlib.Path(filename)
 
 def prompt_for_map():
     filename = pathlib.Path(askopenfilename())
@@ -134,7 +138,7 @@ class Map:
         return {'layers': [crop(l.tiles, width_ptr[0], height_ptr[0]) for l in self.layers],
                 'enemy_pos': [e.pos.to_tuple() for e in self.enemies],
                 'spawn': self.spawn.to_tuple(),
-                'trigger_tags': self.trigger_tags,
+                'trigger_tags': {f'{k[0]} {k[1]}': v for k, v in self.trigger_tags.items()},
                 }
 
     @property
@@ -197,11 +201,13 @@ height_ptr[0] = 40
 
 trigger_tag_text = rl.ffi.new("char[20]")
 
-last_tile = glm.ivec2(0, 0)
-
 @dataclass
 class TileEditState:
-    selected_tile: int = 1
+    tile_def: int = 1
+
+@dataclass
+class TriggerEditState:
+    selected_tile: Tuple[int, int]
 
 @dataclass
 class EnemyEditState:
@@ -211,7 +217,7 @@ class EnemyEditState:
 class SpawnEditState:
     pass
 
-editor_state: Union[TileEditState, EnemyEditState, SpawnEditState] = TileEditState()
+editor_state: Union[TileEditState, TriggerEditState, EnemyEditState, SpawnEditState] = TileEditState()
 selected_layer = 0
 
 # default to map.json
@@ -219,7 +225,7 @@ mapfile = pathlib.Path('map.json')
 if mapfile.exists():
     map = Map(mapfile)
 else:
-    map, mapfile = prompt_for_map()
+    map, mapfile = prompt_for_new_map()
 
 edit_history = EditHistory()
 edit_history.update(map)
@@ -242,6 +248,14 @@ def hot_key_released(key):
 
 number_keys = 'ZERO ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE'.split()
 while not rl.window_should_close():
+    mouse_pos_world = rl.get_screen_to_world_2d(rl.get_mouse_position(), camera)
+
+    hoverx, hovery = int(mouse_pos_world.x // ZOOM_TILE_SIZE), int(mouse_pos_world.y // ZOOM_TILE_SIZE)
+    world_rec = rl.Rectangle(hoverx * ZOOM_TILE_SIZE,
+                             hovery * ZOOM_TILE_SIZE,
+                             ZOOM_TILE_SIZE,
+                             ZOOM_TILE_SIZE)
+
     if hot_key_released('ctrl-z'):
         edit_history.step_history(-1, map)
     if hot_key_released('ctrl-y'):
@@ -254,6 +268,8 @@ while not rl.window_should_close():
         editor_state = EnemyEditState()
     if hot_key_released('s'):
         editor_state = SpawnEditState()
+    if hot_key_released('t'):
+        editor_state = TriggerEditState((hoverx, hovery))
 
     if rl.is_mouse_button_down(rl.MOUSE_BUTTON_RIGHT):
         camera.target.x -= rl.get_mouse_delta().x
@@ -272,16 +288,16 @@ while not rl.window_should_close():
     for layer_i in range(len(map.layers)):
         for x in range(0, width_ptr[0]):
             for y in range(0, height_ptr[0]):
-                world_rec = rl.Rectangle(x * ZOOM_TILE_SIZE, y * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
+                tile_rec = rl.Rectangle(x * ZOOM_TILE_SIZE, y * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
                 tile_idx = map.layers[layer_i][x,y]
                 if tile_idx != 0:
-                    tileset.draw_tile(tile_idx, world_rec)
+                    tileset.draw_tile(tile_idx, tile_rec)
 
     for e in map.enemies:
-        world_rec = rl.Rectangle(e.pos.x * ZOOM_TILE_SIZE, e.pos.y * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
+        enemy_world_rec = rl.Rectangle(e.pos.x * ZOOM_TILE_SIZE, e.pos.y * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
         rl.draw_texture_pro(enemy_tex,
                             rl.Rectangle(0, 0, TILE_SIZE, TILE_SIZE),
-                            world_rec,
+                            enemy_world_rec,
                             (0, 0),
                             0,
                             rl.WHITE)
@@ -293,28 +309,28 @@ while not rl.window_should_close():
                         0,
                         rl.WHITE)
 
-    mouse_pos_world = rl.get_screen_to_world_2d(rl.get_mouse_position(), camera)
-    x = int(mouse_pos_world.x // ZOOM_TILE_SIZE)
-    y = int(mouse_pos_world.y // ZOOM_TILE_SIZE)
-    world_rec = rl.Rectangle(x * ZOOM_TILE_SIZE,
-                             y * ZOOM_TILE_SIZE,
-                             ZOOM_TILE_SIZE,
-                             ZOOM_TILE_SIZE)
-
     rl.draw_rectangle_lines(int(world_rec.x), int(world_rec.y), int(world_rec.width), int(world_rec.height),
                             rl.WHITE)
 
     match editor_state:
-        case TileEditState(selected_tile=selected_tile):
+        case TileEditState(tile_def=tile_def):
             if hot_key_released('f'):
-                flood_fill(map.bg, (x, y), selected_tile)
+                flood_fill(map.bg, (hoverx, hovery), tile_def)
             else:
                 if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
-                    map.bg[x,y] = selected_tile
-                    if (x, y) in map.bg:
-                        last_tile = glm.ivec2(x, y)
+                    map.bg[hoverx,hovery] = tile_def
+        case TriggerEditState(selected_tile=selected):
+            if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
+                editor_state = TriggerEditState((hoverx, hovery))
 
-            rl.draw_rectangle_lines(last_tile.x * ZOOM_TILE_SIZE, last_tile.y * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, rl.GREEN)
+                edit_mode['trigger_tag'] = True
+                # clear out previous tag
+                rl.ffi.memmove(trigger_tag_text, b'\x00' * len(trigger_tag_text), len(trigger_tag_text))
+                tag = map.trigger_tags.get((hoverx, hovery), '')
+                rl.ffi.memmove(trigger_tag_text, tag.encode('ascii'), len(trigger_tag_text))
+            for tx, ty in map.trigger_tags:
+                rl.draw_rectangle_lines(tx * ZOOM_TILE_SIZE, ty * ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, rl.GREEN)
+            rl.draw_rectangle_lines(selected[0] * ZOOM_TILE_SIZE + 4, selected[1] * ZOOM_TILE_SIZE + 4, ZOOM_TILE_SIZE - 8, ZOOM_TILE_SIZE - 8, rl.WHITE)
         case EnemyEditState():
             rl.draw_texture_pro(enemy_tex,
                                 rl.Rectangle(0, 0, TILE_SIZE, TILE_SIZE),
@@ -323,7 +339,7 @@ while not rl.window_should_close():
                                 0,
                                 rl.fade(rl.WHITE, 0.4))
             if rl.is_mouse_button_released(rl.MOUSE_BUTTON_LEFT):
-                map.enemies.append(Enemy(glm.ivec2(x, y), []))
+                map.enemies.append(Enemy(glm.ivec2(hoverx, hovery), []))
 
         case SpawnEditState():
             rl.draw_texture_pro(zink_tex,
@@ -333,30 +349,39 @@ while not rl.window_should_close():
                                 0,
                                 rl.fade(rl.WHITE, 0.4))
             if rl.is_mouse_button_released(rl.MOUSE_BUTTON_LEFT):
-                map.spawn = glm.vec2(x, y)
+                map.spawn = glm.vec2(hoverx, hovery)
 
     rl.end_mode_2d()
 
     match editor_state:
-        case TileEditState(selected_tile=selected_tile):
-            tile_type = COLLISION_TYPES.index(tileset.tiles[selected_tile]['collision'])
+        case TriggerEditState(selected_tile=selected_tile):
+            if edit_mode['trigger_tag']:
+                popup_width  = 140
+                popup_height = 80
+                rect = rl.Rectangle(rl.get_render_width() / 2 - popup_width / 2,
+                                    rl.get_render_height() / 2 - popup_height / 2,
+                                    popup_width,
+                                    popup_height)
+
+                edit_mode['trigger_tag'] = not rl.gui_window_box(rect, "Set Tag")
+
+                if rl.gui_text_box(rl.Rectangle(rect.x + 5, rect.y + 40, rect.width - 10, 30), rl.ffi.cast("char*", trigger_tag_text), len(trigger_tag_text), True):
+                    edit_mode['trigger_tag'] = False
+                    tag = rl.ffi.string(trigger_tag_text).decode('ascii')
+                    map.trigger_tags[selected_tile] = tag
+                    if tag == '' and selected_tile in map.trigger_tags:
+                        del map.trigger_tags[selected_tile]
+        case TileEditState(tile_def=tile_def):
+            tile_type = COLLISION_TYPES.index(tileset.tiles[tile_def]['collision'])
             new_tile_type = rl.gui_toggle_group(rl.Rectangle(30, rl.get_render_height() - ZOOM_TILE_SIZE - 35, 100, 30), ';'.join(COLLISION_TYPES), tile_type)
             if tile_type != new_tile_type:
-                tileset.set(selected_tile, 'collision', COLLISION_TYPES[new_tile_type])
-
-            if COLLISION_TYPES[tile_type] == 'trigger':
-                if rl.gui_text_box(rl.Rectangle(340, rl.get_render_height() - ZOOM_TILE_SIZE - 35, 100, 30), rl.ffi.cast("char*", trigger_tag_text), len(trigger_tag_text), edit_mode['trigger_tag']):
-                    edit_mode['trigger_tag'] = not edit_mode['trigger_tag']
-                    if not edit_mode['trigger_tag']:
-                        trigger_tag = rl.ffi.string(trigger_tag_text).decode('ascii')
-                        print('set', last_tile, 'to', trigger_tag)
-                        map.trigger_tags[f'{last_tile.x} {last_tile.y}'] = trigger_tag
+                tileset.set(tile_def, 'collision', COLLISION_TYPES[new_tile_type])
 
             for i in range(len(tileset.tiles)):
                 display_rect = (i * ZOOM_TILE_SIZE, rl.get_render_height() - ZOOM_TILE_SIZE, ZOOM_TILE_SIZE, ZOOM_TILE_SIZE)
                 tileset.draw_tile(i, rl.Rectangle(*display_rect))
 
-                if i == selected_tile:
+                if i == tile_def:
                     rl.draw_rectangle_lines(*display_rect, rl.WHITE)
 
     left_col = YLayout()
@@ -375,6 +400,8 @@ while not rl.window_should_close():
     with left_col.row(30) as ypos:
         if rl.gui_button(rl.Rectangle(60, ypos, 100, 30), "map file"):
             map, mapfile = prompt_for_map()
+        if rl.gui_button(rl.Rectangle(170, ypos, 100, 30), "new map"):
+            map, mapfile = prompt_for_new_map()
 
     rl.draw_fps(rl.get_render_width() - 100, 10)
 
