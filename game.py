@@ -12,6 +12,7 @@ rl.init_window(WIDTH, HEIGHT, "Legend of Zink")
 rl.init_audio_device()
 rl.set_target_fps(60)
 
+# load resources
 music = rl.load_music_stream("bg1.xm")
 throw_sfx = rl.load_sound("throw.wav")
 hit_sfx = rl.load_sound("hit.wav")
@@ -125,7 +126,6 @@ while not rl.window_should_close():
 
     player.pos += 0.07 * normalize0(input_dir)
 
-
     sword.pos += sword.vel
 
     errx = glm.clamp(camera.target.x - player.pos.x * TILE_SIZE, -20, 20)
@@ -141,7 +141,8 @@ while not rl.window_should_close():
         if rl.check_collision_recs(tile_rect(t), tile_rect(player.pos)) and not event_queue:
             print('trigger', v)
             event_queue.append(fade_to(load_scene('cave.json')))
-            #scene = Scene('cave.json')
+            music = rl.load_music_stream("cave.xm")
+            rl.play_music_stream(music)
 
     if sword.is_active():
         collided = False
