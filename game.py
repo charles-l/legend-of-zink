@@ -55,10 +55,27 @@ tileset_tex = rl.load_texture('tileset.png')
 with open('tileset.def.json') as f:
     tilesetdef = json.load(f)
 
+debug_rects = []
+frame_i = 0
+
 class Scene:
     def __init__(self, mapfile):
         self.map_layers, self.enemies, self.trigger_tags, player.pos = load_map(mapfile)
         self.collision_map = [[tilesetdef[t]['collision'] == 'collide' for t in row] for row in self.map_layers[0]]
+
+    def handle_collisions(self, actor_pos):
+        nearby_tiles = []
+        for dir in [(0, 0), (1, 0),
+                    (0, 1), (1, 1)]:
+            tile = glm.ivec2(actor_pos + dir)
+            if self.collision_map[tile.y][tile.x]:
+                nearby_tiles.append(tile_rect(tile))
+
+        if (new_pos := resolve_map_collision(nearby_tiles, tile_rect(actor_pos))):
+            actor_pos.x, actor_pos.y = new_pos.x / TILE_SIZE, new_pos.y / TILE_SIZE
+            return True
+        else:
+            return False
 
 scene = Scene('map.json')
 
@@ -93,7 +110,10 @@ def load_scene(mapfile):
 camera = rl.Camera2D()
 camera.zoom = 6
 camera.offset = WIDTH / 2, HEIGHT / 2
+#rl.toggle_fullscreen()
 while not rl.window_should_close():
+    frame_i += 1
+    debug_rects.clear()
     rl.update_music_stream(music)
     if event_queue:
         try:
@@ -146,7 +166,7 @@ while not rl.window_should_close():
 
     if sword.is_active():
         collided = False
-        if fix_map_overlap(scene.collision_map, sword.pos):
+        if scene.handle_collisions(sword.pos):
             collided = True
         to_kill = []
         for i, e in enumerate(scene.enemies):
@@ -159,9 +179,9 @@ while not rl.window_should_close():
         if collided:
             sword.deactivate()
 
-    fix_map_overlap(scene.collision_map, player.pos)
+    scene.handle_collisions(player.pos)
     for e in scene.enemies:
-        fix_map_overlap(scene.collision_map, e.pos)
+        scene.handle_collisions(e.pos)
         if rl.check_collision_recs(tile_rect(player.pos), tile_rect(e.pos)) and last_damage.trigger():
             print('damage')
 
@@ -173,25 +193,28 @@ while not rl.window_should_close():
     for y, row in enumerate(scene.map_layers[0]):
         for x, c in enumerate(row):
             if c != 0:
-                rl.draw_texture_pro(tileset_tex, rl.Rectangle(*tilesetdef[c]['rect']), tile_rect(glm.vec2(x, y)), (0, 0), 0, rl.WHITE)
+                rl.draw_texture_pro(tileset_tex, rl.Rectangle(*tilesetdef[c]['rect']), itile_rect(glm.vec2(x, y)), (0, 0), 0, rl.WHITE)
                 #rl.draw_rectangle(int(x * TILE_SIZE), int(y * TILE_SIZE), TILE_SIZE, TILE_SIZE, rl.GRAY)
 
     for e in scene.enemies:
         frame = rl.get_time() % 0.2 // 0.1
-        rl.draw_texture_pro(enemy_tex, rl.Rectangle(frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), tile_rect(e.pos), (0, 0), 0, rl.WHITE)
+        rl.draw_texture_pro(enemy_tex, rl.Rectangle(frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), itile_rect(e.pos), (0, 0), 0, rl.WHITE)
 
     color = rl.WHITE
     if last_damage.cooldown_active() and last_damage.cooldown_time % 0.2 < 0.1:
         color = rl.RED
     #rl.draw_rectangle_lines(int(player.pos.x * TILE_SIZE), int(player.pos.y * TILE_SIZE), TILE_SIZE, TILE_SIZE, color)
-    rl.draw_texture_pro(zink_tex, rl.Rectangle(player.frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), tile_rect(player.pos), (0, 0), 0, color)
-    rl.draw_line_v(tuple(player.pos * TILE_SIZE + TILE_SIZE / 2), tuple(player.pos * TILE_SIZE + player.heading * TILE_SIZE * 1.5 + TILE_SIZE / 2), rl.GREEN)
+    rl.draw_texture_pro(zink_tex, rl.Rectangle(player.frame * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), itile_rect(player.pos), (0, 0), 0, color)
+    #rl.draw_line_v(tuple(player.pos * TILE_SIZE + TILE_SIZE / 2), tuple(player.pos * TILE_SIZE + player.heading * TILE_SIZE * 1.5 + TILE_SIZE / 2), rl.GREEN)
 
     if sword.is_active():
         sword_heading = glm.ivec2(glm.normalize(sword.vel)).to_tuple()
         angle = {(0, -1): 0, (1, 0): 90, (0, 1): 180, (-1, 0): 270}[sword_heading]
-        rl.draw_texture_pro(sword_tex, tile_rect(glm.vec2(0, 0)), tile_rect(sword.pos + (0.5, 0.5)), (TILE_SIZE // 2, TILE_SIZE // 2), angle, rl.WHITE)
+        rl.draw_texture_pro(sword_tex, itile_rect(glm.vec2(0, 0)), itile_rect(sword.pos + (0.5, 0.5)), (TILE_SIZE // 2, TILE_SIZE // 2), angle, rl.WHITE)
         #rl.draw_rectangle(int(sword.pos.x * TILE_SIZE), int(sword.pos.y * TILE_SIZE), TILE_SIZE, TILE_SIZE, rl.PURPLE)
+
+    for r in debug_rects:
+        rl.draw_rectangle_lines(int(r.x), int(r.y), int(r.width), int(r.height), rl.PURPLE)
 
     rl.end_mode_2d()
 

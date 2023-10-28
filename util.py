@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import pyray as rl
 import glm
 import json
+from typing import Optional
 
 TILE_SIZE = 16
 
@@ -25,35 +26,36 @@ class Spring:
 # size_spring = Spring(70, 4, 0)
 
 def tile_rect(point):
+    return rl.Rectangle(point[0] * TILE_SIZE, point[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+
+def itile_rect(point):
     return rl.Rectangle(int(point[0] * TILE_SIZE), int(point[1] * TILE_SIZE), TILE_SIZE, TILE_SIZE)
 
 def normalize0(v):
     return glm.normalize(v) if v != glm.vec2() else glm.vec2()
 
-def fix_map_overlap(collision_mask, actor_pos):
-    '''Fix overlap with map tiles. Mutates `actor_pos`.'''
-    collided = False
+def resolve_map_collision(map_aabbs, actor_aabb) -> Optional[glm.vec2]:
+    '''Fix overlap with map tiles. Returns new position for actor_aabb.'''
+    # internal copy of actor_aabb that will be mutated
+    aabb = rl.Rectangle(actor_aabb.x, actor_aabb.y,
+                        actor_aabb.width, actor_aabb.height)
     for i in range(3):
         overlap = glm.vec2()
         most_area = 0
-        for dir in [(0, 0), (1, 0),
-                    (0, 1), (1, 1)]:
-            tile = glm.ivec2(actor_pos + dir)
-            if 0 <= tile.y < len(collision_mask) and 0 <= tile.x < len(collision_mask[0]) and collision_mask[tile.y][tile.x]:
-                overlap_rec = rl.get_collision_rec(tile_rect(tile), tile_rect(actor_pos))
-                overlap_area = overlap_rec.width * overlap_rec.height
-                if overlap_area > most_area:
-                    most_area = overlap_area
-                    if overlap_rec.width < overlap_rec.height:
-                        dir = -1 if actor_pos.x < tile.x else 1
-                        overlap = glm.vec2(dir * overlap_rec.width / TILE_SIZE, 0)
-                    else:
-                        dir = -1 if actor_pos.y < tile.y else 1
-                        overlap = glm.vec2(0, dir * overlap_rec.height / TILE_SIZE)
-        if overlap != glm.vec2():
-            collided = True
-        actor_pos += overlap
-    return collided
+        for i, map_aabb in enumerate(map_aabbs):
+            overlap_rec = rl.get_collision_rec(map_aabb, aabb)
+            overlap_area = overlap_rec.width * overlap_rec.height
+            if overlap_area > most_area:
+                most_area = overlap_area
+                if overlap_rec.width < overlap_rec.height:
+                    dir = -1 if aabb.x < map_aabb.x else 1
+                    overlap = glm.vec2(dir * overlap_rec.width, 0)
+                else:
+                    dir = -1 if aabb.y < map_aabb.y else 1
+                    overlap = glm.vec2(0, dir * overlap_rec.height)
+        aabb.x += overlap.x
+        aabb.y += overlap.y
+    return glm.vec2(aabb.x, aabb.y)# if (aabb.x, aabb.y) != (actor_aabb.x, actor_aabb.y) else None
 
 class CooldownTimer:
     def __init__(self, cooldown):
