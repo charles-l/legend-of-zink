@@ -34,6 +34,15 @@ def itile_rect(point):
 def normalize0(v):
     return glm.normalize(v) if v != glm.vec2() else glm.vec2()
 
+def camera_follow_window(camera, target_pos, window_width, window_height):
+    target_pos = target_pos
+    window_width = window_width / camera.zoom
+    window_height = window_height / camera.zoom
+    errx = glm.clamp(camera.target.x - target_pos.x, -window_width / 2, window_width / 2)
+    erry = glm.clamp(camera.target.y - target_pos.y, -window_height / 2, window_height / 2)
+    camera.target.x = (errx + target_pos.x)
+    camera.target.y = (erry + target_pos.y)
+
 def resolve_map_collision(map_aabbs, actor_aabb) -> Optional[glm.vec2]:
     '''Fix overlap with map tiles. Returns new position for actor_aabb.'''
     # internal copy of actor_aabb that will be mutated
@@ -55,7 +64,7 @@ def resolve_map_collision(map_aabbs, actor_aabb) -> Optional[glm.vec2]:
                     overlap = glm.vec2(0, dir * overlap_rec.height)
         aabb.x += overlap.x
         aabb.y += overlap.y
-    return glm.vec2(aabb.x, aabb.y)# if (aabb.x, aabb.y) != (actor_aabb.x, actor_aabb.y) else None
+    return glm.vec2(aabb.x, aabb.y) if (aabb.x, aabb.y) != (actor_aabb.x, actor_aabb.y) else None
 
 class CooldownTimer:
     def __init__(self, cooldown):
@@ -119,3 +128,21 @@ def load_map_data(data):
         x, y = k.split()
         trigger_tags[(int(x), int(y))] = v
     return layers, enemies, trigger_tags, glm.vec2(data['spawn'])
+
+def debug_draw_input_axis(input_vec, x=400, y=100):
+    rl.draw_circle_lines(x, y, 50, rl.GRAY)
+    rl.draw_line(x, y, int(x + input_vec.x * 50), int(y + input_vec.y * 50), rl.RED)
+
+    clamped = glm.vec2(input_vec.x, input_vec.y)
+    if (vlen := glm.length(clamped)) > 1:
+        clamped /= vlen
+    rl.draw_line(x, y, int(x + clamped.x * 50), int(y + clamped.y * 50), rl.GREEN)
+
+def debug_draw_camera_follow_window(width, height):
+    centerx = rl.get_screen_width() / 2
+    centery = rl.get_screen_height() / 2
+    rl.draw_rectangle_lines(int(centerx - width / 2),
+                            int(centery - height / 2),
+                            width,
+                            height,
+                            rl.PURPLE)

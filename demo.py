@@ -5,22 +5,22 @@ import glm
 import random
 from util import *
 
-WIDTH = 1600
-HEIGHT = 1200
+WIDTH = 800
+HEIGHT = 600
 
 rl.init_window(WIDTH, HEIGHT, "Legend of Zink")
 rl.init_audio_device()
 rl.set_target_fps(60)
 
 # load resources
-music = rl.load_music_stream("bg1.xm")
-throw_sfx = rl.load_sound("throw.wav")
-hit_sfx = rl.load_sound("hit.wav")
+music = rl.load_music_stream("demoassets/bg1.xm")
+throw_sfx = rl.load_sound("demoassets/throw.wav")
+hit_sfx = rl.load_sound("demoassets/hit.wav")
 rl.play_music_stream(music)
 
-sword_tex = rl.load_texture('sword.png')
-zink_tex = rl.load_texture('zink.png')
-enemy_tex = rl.load_texture('enemy.png')
+sword_tex = rl.load_texture('demoassets/sword.png')
+zink_tex = rl.load_texture('demoassets/zink.png')
+enemy_tex = rl.load_texture('demoassets/enemy.png')
 run_frames = {
     (0, -1): list(range(0, 4)),
     (1,  0): list(range(4, 8)),
@@ -51,8 +51,8 @@ class Player:
 sword = Sword(glm.vec2(), glm.vec2())
 player = Player()
 
-tileset_tex = rl.load_texture('tileset.png')
-with open('tileset.def.json') as f:
+tileset_tex = rl.load_texture('demoassets/tileset.png')
+with open('demoassets/tileset.def.json') as f:
     tilesetdef = json.load(f)
 
 debug_rects = []
@@ -77,7 +77,7 @@ class Scene:
         else:
             return False
 
-scene = Scene('map.json')
+scene = Scene('demoassets/map.json')
 
 fade_out_rect = 0
 event_queue = []
@@ -148,10 +148,7 @@ while not rl.window_should_close():
 
     sword.pos += sword.vel
 
-    errx = glm.clamp(camera.target.x - player.pos.x * TILE_SIZE, -20, 20)
-    erry = glm.clamp(camera.target.y - player.pos.y * TILE_SIZE, -20, 20)
-    camera.target.x = int(errx + player.pos.x * TILE_SIZE)
-    camera.target.y = int(erry + player.pos.y * TILE_SIZE)
+    camera_follow_window(camera, player.pos * TILE_SIZE, 40, 40)
 
     for e in scene.enemies:
         e.pos.x += 0.04 if rl.get_time() % 4 < 2 else -0.04
@@ -160,8 +157,8 @@ while not rl.window_should_close():
     for t, v in scene.trigger_tags.items():
         if rl.check_collision_recs(tile_rect(t), tile_rect(player.pos)) and not event_queue:
             print('trigger', v)
-            event_queue.append(fade_to(load_scene('cave.json')))
-            music = rl.load_music_stream("cave.xm")
+            event_queue.append(fade_to(load_scene('demoassets/cave.json')))
+            music = rl.load_music_stream("demoassets/cave.xm")
             rl.play_music_stream(music)
 
     if sword.is_active():

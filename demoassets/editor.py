@@ -8,6 +8,10 @@ import pathlib
 import pickle
 import collections
 import contextlib
+import sys
+
+# HACK because relative imports don't work :|
+sys.path.append('..')
 from util import *
 from typing import Literal, Union, Tuple
 
