@@ -17,8 +17,12 @@ state = SimpleNamespace(
 
 
 camera = rl.Camera2D(
-    (WIDTH / 2, HEIGHT / 2), (0, 0), 0, 1  # offset from target  # target  # rotation
+    (WIDTH / 2, HEIGHT / 2), (0, 0), 0, 2  # offset from target  # target  # rotation
 )  # zoom
+
+player_tex = rl.load_texture("demoassets/zink.png")
+PLAYER_SIZE = 16
+PLAYER_FRAMES = [4, 5, 6, 7]
 
 
 def update(state):
@@ -55,11 +59,20 @@ def draw(state):
     util.camera_follow_window(
         camera, state.player + (PLAYER_SIZE / 2, PLAYER_SIZE / 2), 100, 100
     )
-    rl.draw_rectangle(
-        int(state.player.x), int(state.player.y), PLAYER_SIZE, PLAYER_SIZE, rl.RED
+
+    current_frame = PLAYER_FRAMES[int((rl.get_time() * 10) % 4)]
+    rl.draw_texture_pro(
+        player_tex,
+        rl.Rectangle(PLAYER_SIZE * current_frame, 0, PLAYER_SIZE, PLAYER_SIZE),
+        rl.Rectangle(state.player.x, state.player.y, PLAYER_SIZE, PLAYER_SIZE),
+        (0, 0),
+        0,
+        rl.WHITE,
     )
+
     for wall in state.walls:
         rl.draw_rectangle_rec(wall, rl.WHITE)
+
     rl.end_mode_2d()
     util.debug_draw_camera_follow_window(100 + PLAYER_SIZE, 100 + PLAYER_SIZE)
 
