@@ -10,10 +10,15 @@ rl.init_window(WIDTH, HEIGHT, "My awesome game")
 state = SimpleNamespace(
     player=glm.vec2(10, 10),
     walls=[
-        rl.Rectangle(700, 0, 10, 400),
+        rl.Rectangle(300, 0, 10, 400),
         rl.Rectangle(0, 500, 400, 10),
     ],
 )
+
+
+camera = rl.Camera2D(
+    (WIDTH / 2, HEIGHT / 2), (0, 0), 0, 1  # offset from target  # target  # rotation
+)  # zoom
 
 
 def update(state):
@@ -46,11 +51,17 @@ def update(state):
 
 def draw(state):
     rl.clear_background(rl.BLACK)
+    rl.begin_mode_2d(camera)
+    util.camera_follow_window(
+        camera, state.player + (PLAYER_SIZE / 2, PLAYER_SIZE / 2), 100, 100
+    )
     rl.draw_rectangle(
         int(state.player.x), int(state.player.y), PLAYER_SIZE, PLAYER_SIZE, rl.RED
     )
     for wall in state.walls:
         rl.draw_rectangle_rec(wall, rl.WHITE)
+    rl.end_mode_2d()
+    util.debug_draw_camera_follow_window(100 + PLAYER_SIZE, 100 + PLAYER_SIZE)
 
 
 rl.set_target_fps(60)
