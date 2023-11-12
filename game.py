@@ -1,20 +1,27 @@
 import pyray as rl, glm, util
 from types import SimpleNamespace
+import random
 
 WIDTH, HEIGHT = 800, 600
 
 PLAYER_SIZE = 100
 
 rl.init_window(WIDTH, HEIGHT, "My awesome game")
+rl.init_audio_device()
+
+music = rl.load_music_stream("demoassets/bg1.xm")
+rl.set_music_volume(music, 0.3)
+rl.play_music_stream(music)
+
+step = rl.load_sound("demoassets/step.wav")
 
 state = SimpleNamespace(
     player=glm.vec2(10, 10),
     walls=[
-        rl.Rectangle(300, 0, 10, 400),
-        rl.Rectangle(0, 500, 400, 10),
+        rl.Rectangle(100, -40, 10, 400),
+        rl.Rectangle(-200, 400, 400, 10),
     ],
 )
-
 
 camera = rl.Camera2D(
     (WIDTH / 2, HEIGHT / 2), (0, 0), 0, 2  # offset from target  # target  # rotation
@@ -26,6 +33,7 @@ PLAYER_FRAMES = [4, 5, 6, 7]
 
 
 def update(state):
+    rl.update_music_stream(music)
     input = glm.vec2()
     if rl.is_key_down(rl.KEY_DOWN):
         input.y += 1
@@ -38,8 +46,6 @@ def update(state):
 
     input.x += rl.get_gamepad_axis_movement(0, rl.GAMEPAD_AXIS_LEFT_X)
     input.y += rl.get_gamepad_axis_movement(0, rl.GAMEPAD_AXIS_LEFT_Y)
-
-    util.debug_draw_input_axis(input)
 
     if (vec_length := glm.length(input)) > 1:
         input /= vec_length
@@ -60,7 +66,12 @@ def draw(state):
         camera, state.player + (PLAYER_SIZE / 2, PLAYER_SIZE / 2), 100, 100
     )
 
-    current_frame = PLAYER_FRAMES[int((rl.get_time() * 10) % 4)]
+    last_step_i = int(((rl.get_time() - rl.get_frame_time()) * 10) % 4)
+    step_i = int((rl.get_time() * 10) % 4)
+    if last_step_i != step_i and step_i in (1, 3):
+        rl.set_sound_pitch(step, random.uniform(0.7, 1.4))
+        rl.play_sound(step)
+    current_frame = PLAYER_FRAMES[step_i]
     rl.draw_texture_pro(
         player_tex,
         rl.Rectangle(PLAYER_SIZE * current_frame, 0, PLAYER_SIZE, PLAYER_SIZE),
@@ -77,10 +88,13 @@ def draw(state):
     util.debug_draw_camera_follow_window(100 + PLAYER_SIZE, 100 + PLAYER_SIZE)
 
 
-rl.set_target_fps(60)
-while not rl.window_should_close():
-    update(state)
-    rl.begin_drawing()
-    rl.draw_fps(10, 10)
-    draw(state)
-    rl.end_drawing()
+try:
+    rl.set_target_fps(60)
+    while not rl.window_should_close():
+        update(state)
+        rl.begin_drawing()
+        rl.draw_fps(10, 10)
+        draw(state)
+        rl.end_drawing()
+finally:
+    rl.close_audio_device()
