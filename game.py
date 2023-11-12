@@ -85,16 +85,31 @@ def draw(state):
         rl.draw_rectangle_rec(wall, rl.WHITE)
 
     rl.end_mode_2d()
-    util.debug_draw_camera_follow_window(100 + PLAYER_SIZE, 100 + PLAYER_SIZE)
 
 
+def menu_step():
+    global step_frame_func
+    rl.begin_drawing()
+    rl.draw_text("LEGEND OF ZINK", 30, 30, 50, rl.WHITE)
+    if rl.gui_button(rl.Rectangle(30, 90, 100, 50), "START") or rl.is_key_released(
+        rl.KEY_SPACE
+    ):
+        step_frame_func = game_step
+    rl.end_drawing()
+
+
+def game_step():
+    update(state)
+    rl.begin_drawing()
+    rl.draw_fps(10, 10)
+    draw(state)
+    rl.end_drawing()
+
+
+step_frame_func = menu_step
 try:
     rl.set_target_fps(60)
     while not rl.window_should_close():
-        update(state)
-        rl.begin_drawing()
-        rl.draw_fps(10, 10)
-        draw(state)
-        rl.end_drawing()
+        step_frame_func()
 finally:
     rl.close_audio_device()
