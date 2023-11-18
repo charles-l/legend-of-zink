@@ -6,6 +6,7 @@ from typing import Optional
 
 TILE_SIZE = 16
 
+
 @dataclass
 class Spring:
     k: float
@@ -14,7 +15,7 @@ class Spring:
     v: float = 0
 
     def update(self, target_value, dt=None):
-        springforce = -self.k*(self.value-target_value)
+        springforce = -self.k * (self.value - target_value)
         damp = self.damping * self.v
         force = springforce - damp
         if dt is None:
@@ -23,28 +24,43 @@ class Spring:
         self.value += self.v * dt
         return self.value
 
+
 # size_spring = Spring(70, 4, 0)
 
+
 def tile_rect(point):
-    return rl.Rectangle(point[0] * TILE_SIZE, point[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+    return rl.Rectangle(
+        point[0] * TILE_SIZE, point[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE
+    )
+
 
 def itile_rect(point):
-    return rl.Rectangle(int(point[0] * TILE_SIZE), int(point[1] * TILE_SIZE), TILE_SIZE, TILE_SIZE)
+    return rl.Rectangle(
+        int(point[0] * TILE_SIZE), int(point[1] * TILE_SIZE), TILE_SIZE, TILE_SIZE
+    )
+
 
 def normalize0(v):
     return glm.normalize(v) if v != glm.vec2() else glm.vec2()
+
 
 def camera_follow_window(camera, target_pos, window_width, window_height):
     target_pos = target_pos
     window_width = window_width / camera.zoom
     window_height = window_height / camera.zoom
-    errx = glm.clamp(camera.target.x - target_pos.x, -window_width / 2, window_width / 2)
-    erry = glm.clamp(camera.target.y - target_pos.y, -window_height / 2, window_height / 2)
-    camera.target.x = (errx + target_pos.x)
-    camera.target.y = (erry + target_pos.y)
+    errx = glm.clamp(
+        camera.target.x - target_pos.x, -window_width / 2, window_width / 2
+    )
+    erry = glm.clamp(
+        camera.target.y - target_pos.y, -window_height / 2, window_height / 2
+    )
+    camera.target.x = errx + target_pos.x
+    camera.target.y = erry + target_pos.y
+
 
 def copy_rect(rect):
     return rl.Rectangle(rect.x, rect.y, rect.width, rect.height)
+
 
 def get_signed_collision_rec(rect1: rl.Rectangle, rect2: rl.Rectangle) -> rl.Rectangle:
     """Compute the rectangle of intersection between rect1 and rect2.
@@ -58,14 +74,17 @@ def get_signed_collision_rec(rect1: rl.Rectangle, rect2: rl.Rectangle) -> rl.Rec
         r.height = -r.height
     return r
 
+
 def resolve_map_collision(map_aabbs, actor_aabb) -> Optional[glm.vec2]:
     """Fix overlap with map tiles. Returns new position for actor_aabb."""
     # internal copy of actor_aabb that will be mutated
     aabb = copy_rect(actor_aabb)
     if map_aabbs:
-        for i in range(3): # run multiple iters to handle corners/passages
-            most_overlap = max((get_signed_collision_rec(r, aabb) for r in map_aabbs),
-                               key=lambda x: abs(x.width * x.height))
+        for i in range(3):  # run multiple iters to handle corners/passages
+            most_overlap = max(
+                (get_signed_collision_rec(r, aabb) for r in map_aabbs),
+                key=lambda x: abs(x.width * x.height),
+            )
             if abs(most_overlap.width) < abs(most_overlap.height):
                 aabb.x += most_overlap.width
             else:
@@ -75,9 +94,10 @@ def resolve_map_collision(map_aabbs, actor_aabb) -> Optional[glm.vec2]:
     old_pos = (actor_aabb.x, actor_aabb.y)
     return new_pos if new_pos != old_pos else None
 
+
 class CooldownTimer:
     def __init__(self, cooldown):
-        self.last_time = float('-inf')
+        self.last_time = float("-inf")
         self.cooldown = cooldown
 
     @property
@@ -94,6 +114,7 @@ class CooldownTimer:
         else:
             return False
 
+
 class Grid:
     def __init__(self, tiles):
         self.tiles = tiles
@@ -108,8 +129,7 @@ class Grid:
             self.tiles[pos[1]][pos[0]] = val
 
     def __contains__(self, pos):
-        return (0 <= pos[0] < len(self.tiles[0]) and
-                0 <= pos[1] < len(self.tiles))
+        return 0 <= pos[0] < len(self.tiles[0]) and 0 <= pos[1] < len(self.tiles)
 
     def __iter__(self):
         """Iterate over rows."""
@@ -119,24 +139,28 @@ class Grid:
         """Return the number of rows."""
         return len(self.tiles)
 
+
 @dataclass
 class Enemy:
     pos: glm.vec2
     path: list[glm.ivec2]
 
+
 def load_map(path):
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         d = json.load(f)
         return load_map_data(d)
 
+
 def load_map_data(data):
-    enemies = [Enemy(glm.vec2(*p), []) for p in data['enemy_pos']]
-    layers = [Grid(tiles) for tiles in data['layers']]
+    enemies = [Enemy(glm.vec2(*p), []) for p in data["enemy_pos"]]
+    layers = [Grid(tiles) for tiles in data["layers"]]
     trigger_tags = {}
-    for k, v in data['trigger_tags'].items():
+    for k, v in data["trigger_tags"].items():
         x, y = k.split()
         trigger_tags[(int(x), int(y))] = v
-    return layers, enemies, trigger_tags, glm.vec2(data['spawn'])
+    return layers, enemies, trigger_tags, glm.vec2(data["spawn"])
+
 
 def debug_draw_input_axis(input_vec, x=400, y=100):
     rl.draw_circle_lines(x, y, 50, rl.GRAY)
@@ -147,11 +171,10 @@ def debug_draw_input_axis(input_vec, x=400, y=100):
         clamped /= vlen
     rl.draw_line(x, y, int(x + clamped.x * 50), int(y + clamped.y * 50), rl.GREEN)
 
+
 def debug_draw_camera_follow_window(width, height):
     centerx = rl.get_screen_width() / 2
     centery = rl.get_screen_height() / 2
-    rl.draw_rectangle_lines(int(centerx - width / 2),
-                            int(centery - height / 2),
-                            width,
-                            height,
-                            rl.PURPLE)
+    rl.draw_rectangle_lines(
+        int(centerx - width / 2), int(centery - height / 2), width, height, rl.PURPLE
+    )
