@@ -162,8 +162,6 @@ while not rl.window_should_close():
 
     sword.pos += sword.vel
 
-    camera_follow_window(camera, player.pos * TILE_SIZE, 40, 40)
-
     for e in scene.enemies:
         e.pos.x += 0.04 if rl.get_time() % 4 < 2 else -0.04
 
@@ -194,6 +192,8 @@ while not rl.window_should_close():
             sword.deactivate()
 
     scene.handle_collisions(player.pos)
+    camera_follow_window(camera, glm.ivec2(player.pos * TILE_SIZE), 40, 40)
+
     for e in scene.enemies:
         scene.handle_collisions(e.pos)
         if (

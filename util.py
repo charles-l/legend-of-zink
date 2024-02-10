@@ -35,6 +35,7 @@ def tile_rect(point):
 
 
 def itile_rect(point):
+    '''Like tile_rect but truncates to an int first.'''
     return rl.Rectangle(
         int(point[0] * TILE_SIZE), int(point[1] * TILE_SIZE), TILE_SIZE, TILE_SIZE
     )
@@ -45,7 +46,6 @@ def normalize0(v):
 
 
 def camera_follow_window(camera, target_pos, window_width, window_height):
-    target_pos = target_pos
     window_width = window_width / camera.zoom
     window_height = window_height / camera.zoom
     errx = glm.clamp(
@@ -178,3 +178,36 @@ def debug_draw_camera_follow_window(width, height):
     rl.draw_rectangle_lines(
         int(centerx - width / 2), int(centery - height / 2), width, height, rl.PURPLE
     )
+
+class RectAnimator:
+    def __init__(self, rects, fps=28):
+        self.animation_time = 0
+        self.rects = rects
+        self.frame_delay = 1 / fps
+        self.callbacks = {}
+        self.fliph = False
+
+    def set_frame_callback(self, frames, callback):
+        for i in frames:
+            self.callbacks[i] = callback
+
+    def flip_horizontal(self, f):
+        self.fliph = f
+
+    @property
+    def cur_frame(self):
+        return int(self.animation_time / self.frame_delay)
+
+    def update(self, dt):
+        last_frame = self.cur_frame
+        self.animation_time += dt
+        self.animation_time %= self.frame_delay * len(self.rects)
+        if last_frame != self.cur_frame and self.cur_frame in self.callbacks:
+            self.callbacks[self.cur_frame]()
+        return self.get_rect()
+
+    def get_rect(self):
+        r = copy_rect(self.rects[self.cur_frame])
+        if self.fliph:
+            r.width *= -1
+        return r
