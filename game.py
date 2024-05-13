@@ -1,19 +1,17 @@
-import pyray as rl, glm, util
+import pyray as rl
+import random
 
 WIDTH, HEIGHT = 800, 600
-rl.init_window(WIDTH, HEIGHT, "My awesome game")
+rl.init_window(WIDTH, HEIGHT, "Flappy")
+rl.init_audio_device()
 
-state = None
-
-
-def update(state):
-    ...
-
-
-def draw(state):
-    ...
-
-
-while not rl.window_should_close():
-    rl.begin_drawing()
-    rl.end_drawing()
+# run game
+try:
+    while not rl.window_should_close():
+        # update
+        rl.begin_drawing()
+        # draw
+        rl.end_drawing()
+finally:
+    rl.close_audio_device()
+    rl.close_window()

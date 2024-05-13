@@ -75,14 +75,14 @@ def get_signed_collision_rec(rect1: rl.Rectangle, rect2: rl.Rectangle) -> rl.Rec
     return r
 
 
-def resolve_map_collision(map_aabbs, actor_aabb) -> Optional[glm.vec2]:
-    """Fix overlap with map tiles. Returns new position for actor_aabb."""
-    # internal copy of actor_aabb that will be mutated
-    aabb = copy_rect(actor_aabb)
-    if map_aabbs:
+def resolve_map_collision(map_rectangles, actor_rectangle) -> Optional[glm.vec2]:
+    """Fix overlap with map tiles. Returns new position for actor_rectangle."""
+    # internal copy of actor_rectangle that will be mutated
+    aabb = copy_rect(actor_rectangle)
+    if map_rectangles:
         for i in range(3):  # run multiple iters to handle corners/passages
             most_overlap = max(
-                (get_signed_collision_rec(r, aabb) for r in map_aabbs),
+                (get_signed_collision_rec(r, aabb) for r in map_rectangles),
                 key=lambda x: abs(x.width * x.height),
             )
             if abs(most_overlap.width) < abs(most_overlap.height):
@@ -91,7 +91,7 @@ def resolve_map_collision(map_aabbs, actor_aabb) -> Optional[glm.vec2]:
                 aabb.y += most_overlap.height
 
     new_pos = glm.vec2(aabb.x, aabb.y)
-    old_pos = (actor_aabb.x, actor_aabb.y)
+    old_pos = (actor_rectangle.x, actor_rectangle.y)
     return new_pos if new_pos != old_pos else None
 
 
