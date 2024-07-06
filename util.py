@@ -211,3 +211,23 @@ class RectAnimator:
         if self.fliph:
             r.width *= -1
         return r
+
+class CanvasScaler:
+    def __init__(self, width, height, scale):
+        self.render_target = rl.load_render_texture(width // scale, height // scale)
+        self.width = width
+        self.height = height
+
+    def __enter__(self):
+        rl.begin_texture_mode(self.render_target)
+        return self.render_target
+
+    def __exit__(self, type, value, tb):
+        rl.end_texture_mode()
+        rl.draw_texture_pro(self.render_target.texture,
+                            (0, 0, self.render_target.texture.width, -self.render_target.texture.height),
+                            (0, 0, self.width, self.height),
+                            (0, 0),
+                            0,
+                            rl.WHITE)
+
